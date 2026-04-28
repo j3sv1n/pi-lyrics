@@ -9,6 +9,7 @@ import os
 import json
 import shutil
 import re
+import time
 from pathlib import Path
 from flask import (Flask, request, jsonify, send_from_directory,
                    render_template_string, abort)
@@ -18,6 +19,8 @@ import fitz  # PyMuPDF — used for page-count and blank-slide generation
 BASE_DIR   = Path(__file__).parent
 PDF_DIR    = BASE_DIR / "pdfs"
 ORDER_FILE = BASE_DIR / "order.json"
+CONTROL_FILE = BASE_DIR / "control.json"
+STATE_FILE   = BASE_DIR / "state.json"
 
 PDF_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -191,6 +194,25 @@ def api_rename():
     return jsonify({"renamed": new, "order": order})
 
 
+@app.route("/api/status", methods=["GET"])
+def api_status():
+    try:
+        return jsonify(json.loads(STATE_FILE.read_text()))
+    except Exception:
+        return jsonify({"file": None, "index": -1, "page": 0, "pages": 0, "total": 0})
+
+
+@app.route("/api/control", methods=["POST"])
+def api_control():
+    data = request.get_json() or {}
+    action = data.get("action")
+    if action not in ("next", "prev"):
+        return jsonify({"error": "Invalid action"}), 400
+    command = {"action": action, "id": time.time()}
+    CONTROL_FILE.write_text(json.dumps(command))
+    return jsonify(command)
+
+
 @app.route("/pdfs/<filename>")
 def serve_pdf(filename):
     return send_from_directory(str(PDF_DIR), secure_filename(filename))
@@ -342,12 +364,19 @@ HTML = r"""<!DOCTYPE html>
   .file-item:hover { border-color: #353840; box-shadow: 0 2px 12px rgba(0,0,0,.4); }
   .file-item.dragging { opacity: .4; }
   .file-item.drag-over { border-color: var(--accent); background: rgba(255,200,61,.05); }
+  .file-item.is-current { border-color: var(--accent); background: rgba(255,200,61,.08); }
+  .file-item.is-current .file-idx { color: var(--accent); }
   .file-item.is-blank { border-color: #2a2d36; }
+  .file-item.is-blank.is-current { border-color: var(--accent); }
   .file-item.is-blank .file-icon { opacity: .4; }
 
   .drag-handle {
     color: var(--muted); font-size: 1.1rem; cursor: grab;
     padding: 0 4px; flex-shrink: 0;
+    touch-action: none;
+    user-select: none;
+    -webkit-user-select: none;
+    -webkit-touch-callout: none;
   }
   .file-idx {
     font-family: 'Syne', sans-serif; font-weight: 800;
@@ -421,18 +450,31 @@ HTML = r"""<!DOCTYPE html>
   #toast.success { border-color: var(--success); color: var(--success); }
   #toast.error   { border-color: var(--danger);  color: var(--danger); }
 
-  /* Help */
-  .help {
+  /* Display controls */
+  .display-controls {
     margin-top: 40px; background: var(--surface); border: 1px solid var(--border);
     border-radius: var(--radius); padding: 20px 24px;
+    display: flex; align-items: center; justify-content: space-between; gap: 16px;
   }
-  .help h3 { font-family: 'Syne', sans-serif; font-size: .9rem; margin-bottom: 10px; color: var(--muted); }
-  .help ul { list-style: none; display: flex; flex-wrap: wrap; gap: 8px 20px; }
-  .help li { font-size: .82rem; color: var(--muted); }
-  .key {
-    display: inline-block; background: var(--bg); border: 1px solid var(--border);
-    border-radius: 4px; padding: 1px 6px; font-size: .78rem;
-    font-family: monospace; color: var(--text);
+  .current-display { min-width: 0; }
+  .current-display h3 { font-family: 'Syne', sans-serif; font-size: .9rem; margin-bottom: 6px; color: var(--muted); }
+  .current-display-name {
+    color: var(--accent); font-weight: 600; font-size: 1rem;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .current-display-meta { color: var(--muted); font-size: .78rem; margin-top: 3px; }
+  .nav-controls { display: flex; gap: 10px; flex-shrink: 0; }
+  .btn-nav {
+    min-width: 96px; justify-content: center;
+    background: rgba(255,200,61,.1); color: var(--accent);
+    border: 1px solid rgba(255,200,61,.25);
+  }
+  .btn-nav:hover { background: rgba(255,200,61,.18); border-color: rgba(255,200,61,.5); }
+  .help { display: none; }
+  @media (max-width: 640px) {
+    .display-controls { align-items: stretch; flex-direction: column; }
+    .nav-controls { display: grid; grid-template-columns: 1fr 1fr; }
+    .btn-nav { width: 100%; min-width: 0; }
   }
 </style>
 </head>
@@ -468,6 +510,19 @@ HTML = r"""<!DOCTYPE html>
     <button class="btn-blank" id="add-blank-btn">＋ Blank Slide</button>
   </div>
   <div id="file-list"></div>
+
+  <!-- Display controls -->
+  <div class="display-controls">
+    <div class="current-display">
+      <h3>Now Showing</h3>
+      <div class="current-display-name" id="current-display-name">Display not connected</div>
+      <div class="current-display-meta" id="current-display-meta">Use the controls to navigate the display</div>
+    </div>
+    <div class="nav-controls">
+      <button class="btn btn-nav" id="prev-btn">← Previous</button>
+      <button class="btn btn-nav" id="next-btn">Next →</button>
+    </div>
+  </div>
 
   <!-- Help -->
   <div class="help">
@@ -508,6 +563,7 @@ let files      = [];
 let pageCounts = {};   // { filename: pageCount }
 let dragSrc    = null;
 let renaming   = false;
+let currentStatus = {file: null, index: -1, page: 0, pages: 0, total: 0};
 
 // ── Toast ─────────────────────────────────────────────────────────────────────
 function toast(msg, type='success', dur=2800) {
@@ -525,11 +581,27 @@ async function api(url, opts={}) {
   return r.json();
 }
 
+function displayName(name) {
+  if (!name) return '';
+  const bare = name.toLowerCase().endsWith('.pdf') ? name.slice(0, -4) : name;
+  return bare.replace(/_/g, ' ');
+}
+
 // ── Render list ───────────────────────────────────────────────────────────────
 function render() {
   const list = document.getElementById('file-list');
+  const currentName = document.getElementById('current-display-name');
+  const currentMeta = document.getElementById('current-display-meta');
   document.getElementById('count-badge').textContent =
     `${files.length} slide${files.length===1?'':'s'}`;
+  if (currentStatus.file) {
+    currentName.textContent = displayName(currentStatus.file);
+    currentMeta.textContent = `${currentStatus.index + 1} / ${currentStatus.total}` +
+      (currentStatus.pages > 1 ? `, page ${currentStatus.page + 1} / ${currentStatus.pages}` : '');
+  } else {
+    currentName.textContent = 'Display not connected';
+    currentMeta.textContent = 'Use the controls to navigate the display';
+  }
 
   if (files.length === 0) {
     list.innerHTML = `<div class="empty-state">
@@ -541,13 +613,14 @@ function render() {
 
   list.innerHTML = files.map((f, i) => {
     const isBlank  = f.startsWith('blank') || f.includes('blank');
+    const isCurrent = f === currentStatus.file;
     const pages    = pageCounts[f] || 1;
     const pageBadge = pages > 1
       ? `<span class="page-badge" title="${pages} pages">${pages} pp</span>`
       : '';
     const icon = pages > 1 ? '📑' : (isBlank ? '⬜' : '📄');
     return `
-    <div class="file-item${isBlank ? ' is-blank' : ''}" draggable="true" data-name="${f}" data-idx="${i}">
+    <div class="file-item${isBlank ? ' is-blank' : ''}${isCurrent ? ' is-current' : ''}" draggable="true" data-name="${f}" data-idx="${i}">
       <span class="drag-handle" title="Drag to reorder">⠿</span>
       <span class="file-idx">${i+1}</span>
       <span class="file-icon">${icon}</span>
@@ -582,19 +655,78 @@ function render() {
       files.splice(to, 0, files.splice(from, 1)[0]);
       render();
       try {
-        await api('/api/order', {
-          method:'POST',
-          headers:{'Content-Type':'application/json'},
-          body: JSON.stringify({order: files})
-        });
+        await saveOrder();
         toast('Order saved');
       } catch(err) { toast(err.message, 'error'); }
     });
   });
 
+  // Touch reorder for mobile browsers
+  list.querySelectorAll('.drag-handle').forEach(handle => {
+    handle.addEventListener('pointerdown', e => {
+      if (e.pointerType !== 'touch') return;
+      const item = handle.closest('.file-item');
+      if (!item) return;
+      e.preventDefault();
+      handle.setPointerCapture(e.pointerId);
+      dragSrc = item.dataset.name;
+      const startY = e.clientY;
+      const oldTransition = item.style.transition;
+      item.classList.add('dragging');
+      item.style.zIndex = '1000';
+      item.style.transition = 'none';
+      item.style.pointerEvents = 'none';
+      item.style.boxShadow = '0 12px 30px rgba(0,0,0,.55)';
+
+      const move = evt => {
+        evt.preventDefault();
+        item.style.transform = `translateY(${evt.clientY - startY}px) scale(1.02)`;
+        list.querySelectorAll('.file-item.drag-over').forEach(el => el.classList.remove('drag-over'));
+        const target = document.elementFromPoint(evt.clientX, evt.clientY)?.closest('.file-item');
+        if (target && target.dataset.name !== dragSrc) target.classList.add('drag-over');
+      };
+
+      const end = async evt => {
+        handle.removeEventListener('pointermove', move);
+        handle.removeEventListener('pointerup', end);
+        handle.removeEventListener('pointercancel', end);
+        const target = document.elementFromPoint(evt.clientX, evt.clientY)?.closest('.file-item');
+        item.classList.remove('dragging');
+        item.style.transform = '';
+        item.style.zIndex = '';
+        item.style.transition = oldTransition;
+        item.style.pointerEvents = '';
+        item.style.boxShadow = '';
+        list.querySelectorAll('.file-item.drag-over').forEach(el => el.classList.remove('drag-over'));
+        if (!target || !dragSrc || target.dataset.name === dragSrc) return;
+        const from = files.indexOf(dragSrc);
+        const to = files.indexOf(target.dataset.name);
+        files.splice(to, 0, files.splice(from, 1)[0]);
+        render();
+        try {
+          await saveOrder();
+          toast('Order saved');
+        } catch(err) { toast(err.message, 'error'); }
+      };
+
+      handle.addEventListener('pointermove', move);
+      handle.addEventListener('pointerup', end);
+      handle.addEventListener('pointercancel', end);
+    });
+    handle.addEventListener('contextmenu', e => e.preventDefault());
+  });
+
   // Inline rename
   list.querySelectorAll('.file-name').forEach(el => {
     el.addEventListener('click', e => startRename(el, e));
+  });
+}
+
+async function saveOrder() {
+  return api('/api/order', {
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({order: files})
   });
 }
 
@@ -677,12 +809,32 @@ function startRename(el, event) {
 async function loadFiles() {
   if (renaming) return;
   try {
-    [files, pageCounts] = await Promise.all([
+    [files, pageCounts, currentStatus] = await Promise.all([
       api('/api/files'),
-      api('/api/pagecounts')
+      api('/api/pagecounts'),
+      api('/api/status')
     ]);
     render();
   } catch(err) { toast('Could not load files', 'error'); }
+}
+
+async function loadStatus() {
+  if (renaming) return;
+  try {
+    currentStatus = await api('/api/status');
+    render();
+  } catch(err) {}
+}
+
+async function controlDisplay(action) {
+  try {
+    await api('/api/control', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({action})
+    });
+    setTimeout(loadStatus, 150);
+  } catch(err) { toast(err.message, 'error'); }
 }
 
 // ── Delete ────────────────────────────────────────────────────────────────────
@@ -755,6 +907,11 @@ const blankCancel  = document.getElementById('blank-cancel');
 const blankConfirm = document.getElementById('blank-confirm');
 const blankLabel   = document.getElementById('blank-label');
 const blankPos     = document.getElementById('blank-position');
+const prevBtn      = document.getElementById('prev-btn');
+const nextBtn      = document.getElementById('next-btn');
+
+prevBtn.addEventListener('click', () => controlDisplay('prev'));
+nextBtn.addEventListener('click', () => controlDisplay('next'));
 
 function openBlankDialog() {
   // Populate position select
@@ -796,6 +953,7 @@ blankConfirm.addEventListener('click', async () => {
 
 // ── Poll for changes every 5s ─────────────────────────────────────────────────
 loadFiles();
+setInterval(loadStatus, 1000);
 setInterval(loadFiles, 5000);
 </script>
 </body>
