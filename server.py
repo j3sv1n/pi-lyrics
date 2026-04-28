@@ -171,7 +171,9 @@ def api_delete(filename):
 @app.route("/api/rename", methods=["POST"])
 def api_rename():
     data = request.get_json()
-    old = secure_filename(data.get("old", ""))
+    old_raw = data.get("old", "")
+    existing = set(p.name for p in PDF_DIR.glob("*.pdf"))
+    old = old_raw if old_raw in existing else secure_filename(old_raw)
     new = secure_filename(data.get("new", ""))
     if not old or not new:
         return jsonify({"error": "Missing names"}), 400
@@ -505,6 +507,7 @@ HTML = r"""<!DOCTYPE html>
 let files      = [];
 let pageCounts = {};   // { filename: pageCount }
 let dragSrc    = null;
+let renaming   = false;
 
 // ── Toast ─────────────────────────────────────────────────────────────────────
 function toast(msg, type='success', dur=2800) {
@@ -596,15 +599,19 @@ function render() {
 }
 
 function startRename(el) {
+  renaming = true;
   const oldName = el.dataset.name;
+  let committed = false;
   const inp = document.createElement('input');
   inp.className = 'file-name-input';
   inp.value = oldName;
   el.replaceWith(inp);
-  inp.focus(); inp.select();
+  inp.focus();
   async function commit() {
+    if (committed) return;
+    committed = true;
     let newName = inp.value.trim();
-    if (!newName || newName === oldName) { await loadFiles(); return; }
+    if (!newName || newName === oldName) { renaming = false; await loadFiles(); return; }
     if (!newName.toLowerCase().endsWith('.pdf')) newName += '.pdf';
     try {
       const d = await api('/api/rename', {
@@ -613,9 +620,11 @@ function startRename(el) {
         body: JSON.stringify({old: oldName, new: newName})
       });
       files = d.order;
+      renaming = false;
       render();
       toast(`Renamed to ${newName}`);
     } catch(err) {
+      renaming = false;
       toast(err.message, 'error');
       await loadFiles();
     }
@@ -623,12 +632,13 @@ function startRename(el) {
   inp.addEventListener('blur', commit);
   inp.addEventListener('keydown', e => {
     if (e.key === 'Enter') { e.preventDefault(); inp.blur(); }
-    if (e.key === 'Escape') { inp.removeEventListener('blur', commit); loadFiles(); }
+    if (e.key === 'Escape') { renaming = false; committed = true; inp.removeEventListener('blur', commit); loadFiles(); }
   });
 }
 
 // ── Load ──────────────────────────────────────────────────────────────────────
 async function loadFiles() {
+  if (renaming) return;
   try {
     [files, pageCounts] = await Promise.all([
       api('/api/files'),
