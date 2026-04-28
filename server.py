@@ -10,10 +10,12 @@ import json
 import shutil
 import re
 import time
+import secrets
 from pathlib import Path
 from flask import (Flask, request, jsonify, send_from_directory,
-                   render_template_string, abort)
+                   render_template_string, abort, session, redirect, url_for)
 from werkzeug.utils import secure_filename
+from werkzeug.security import generate_password_hash, check_password_hash
 import fitz  # PyMuPDF — used for page-count and blank-slide generation
 
 BASE_DIR   = Path(__file__).parent
@@ -21,11 +23,246 @@ PDF_DIR    = BASE_DIR / "pdfs"
 ORDER_FILE = BASE_DIR / "order.json"
 CONTROL_FILE = BASE_DIR / "control.json"
 STATE_FILE   = BASE_DIR / "state.json"
+USERS_FILE   = BASE_DIR / "users.json"
+SECRET_FILE  = BASE_DIR / "secret.key"
 
 PDF_DIR.mkdir(parents=True, exist_ok=True)
 
 app = Flask(__name__)
 app.config["MAX_CONTENT_LENGTH"] = 64 * 1024 * 1024  # 64 MB max upload
+if SECRET_FILE.exists():
+    app.secret_key = SECRET_FILE.read_text().strip()
+else:
+    app.secret_key = secrets.token_hex(32)
+    SECRET_FILE.write_text(app.secret_key)
+    try:
+        os.chmod(SECRET_FILE, 0o600)
+    except Exception:
+        pass
+app.config.update(
+    SESSION_COOKIE_HTTPONLY=True,
+    SESSION_COOKIE_SAMESITE="Lax",
+)
+
+USERNAME_RE = re.compile(r"^[A-Za-z0-9_.-]{3,32}$")
+
+
+def read_users():
+    if USERS_FILE.exists():
+        try:
+            data = json.loads(USERS_FILE.read_text())
+            if "users" in data and "owner" in data:
+                return data
+        except Exception:
+            pass
+    return {"owner": None, "users": {}}
+
+
+def write_users(data):
+    USERS_FILE.write_text(json.dumps(data, indent=2))
+    try:
+        os.chmod(USERS_FILE, 0o600)
+    except Exception:
+        pass
+
+
+def has_users():
+    return bool(read_users()["users"])
+
+
+def current_user():
+    username = session.get("username")
+    if not username:
+        return None
+    return read_users()["users"].get(username)
+
+
+def current_username():
+    return session.get("username")
+
+
+def is_admin_user(username=None):
+    username = username or current_username()
+    if not username:
+        return False
+    user = read_users()["users"].get(username)
+    return bool(user and user.get("approved") and user.get("role") in ("admin", "owner"))
+
+
+def auth_response():
+    if request.path.startswith("/api/"):
+        return jsonify({"error": "Authentication required"}), 401
+    return redirect(url_for("login", next=request.path))
+
+
+def safe_next_url(value):
+    return value if value and value.startswith("/") and not value.startswith("//") else None
+
+
+@app.before_request
+def require_login():
+    public = {"login", "register", "setup", "logout"}
+    if request.endpoint in public:
+        return None
+    if not has_users():
+        return redirect(url_for("setup"))
+    user = current_user()
+    if not user or not user.get("approved"):
+        session.clear()
+        return auth_response()
+    return None
+
+
+AUTH_HTML = r"""<!DOCTYPE html>
+<html lang="en"><head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Pi Lyrics - {{ title }}</title>
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;800&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#0d0f14;--surface:#161920;--border:#252830;--accent:#ffc83d;--text:#e8eaf0;--muted:#6b7280;--danger:#ef4444;--success:#22c55e}
+*{box-sizing:border-box}body{margin:0;min-height:100vh;display:grid;place-items:center;background:var(--bg);color:var(--text);font-family:'DM Sans',sans-serif;padding:24px}
+.panel{width:min(420px,100%);background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:28px;box-shadow:0 20px 60px rgba(0,0,0,.35)}
+.logo{font-family:'Syne',sans-serif;font-weight:800;font-size:1.45rem;margin-bottom:4px}.logo span{color:var(--accent)}
+h1{font-family:'Syne',sans-serif;font-size:1rem;margin:0 0 20px;color:var(--muted);font-weight:600}
+label{display:block;color:var(--muted);font-size:.82rem;margin:14px 0 6px}
+input{width:100%;background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:7px;padding:10px 12px;font:inherit;outline:none}input:focus{border-color:var(--accent)}
+button,.link-btn{display:inline-flex;justify-content:center;align-items:center;margin-top:18px;width:100%;border:0;border-radius:7px;padding:10px 12px;background:var(--accent);color:var(--bg);font-weight:700;font:inherit;text-decoration:none;cursor:pointer}
+.secondary{background:transparent;color:var(--muted);border:1px solid var(--border)}.msg{margin:0 0 12px;color:var(--danger);font-size:.88rem}.ok{color:var(--success)}.hint{color:var(--muted);font-size:.82rem;line-height:1.45;margin-top:14px}
+</style></head><body><div class="panel"><div class="logo">Pi <span>Lyrics</span></div><h1>{{ title }}</h1>{% if message %}<p class="msg {{ 'ok' if ok else '' }}">{{ message }}</p>{% endif %}{{ body|safe }}</div></body></html>"""
+
+
+def auth_page(title, body, message="", ok=False):
+    return render_template_string(AUTH_HTML, title=title, body=body, message=message, ok=ok)
+
+
+@app.route("/setup", methods=["GET", "POST"])
+def setup():
+    if has_users():
+        return redirect(url_for("login"))
+    message = ""
+    if request.method == "POST":
+        username = request.form.get("username", "").strip()
+        password = request.form.get("password", "")
+        if not USERNAME_RE.match(username):
+            message = "Use 3-32 letters, numbers, dots, dashes, or underscores."
+        elif len(password) < 8:
+            message = "Password must be at least 8 characters."
+        else:
+            write_users({"owner": username, "users": {username: {"password": generate_password_hash(password), "role": "owner", "approved": True}}})
+            session["username"] = username
+            return redirect(url_for("index"))
+    body = """
+    <form method="post"><label>Owner username</label><input name="username" autocomplete="username" required autofocus>
+    <label>Password</label><input name="password" type="password" autocomplete="new-password" required minlength="8">
+    <button type="submit">Create Owner Account</button></form><p class="hint">This first account becomes the protected owner account.</p>"""
+    return auth_page("Create Owner Account", body, message)
+
+
+@app.route("/login", methods=["GET", "POST"])
+def login():
+    if not has_users():
+        return redirect(url_for("setup"))
+    message = ""
+    if request.method == "POST":
+        username = request.form.get("username", "").strip()
+        password = request.form.get("password", "")
+        user = read_users()["users"].get(username)
+        if user and user.get("approved") and check_password_hash(user.get("password", ""), password):
+            session["username"] = username
+            return redirect(safe_next_url(request.args.get("next")) or url_for("index"))
+        message = "Your account is waiting for admin approval." if user and not user.get("approved") else "Invalid username or password."
+    body = """
+    <form method="post"><label>Username</label><input name="username" autocomplete="username" required autofocus>
+    <label>Password</label><input name="password" type="password" autocomplete="current-password" required>
+    <button type="submit">Log In</button></form><a class="link-btn secondary" href="/register">Request Access</a>"""
+    return auth_page("Log In", body, message)
+
+
+@app.route("/register", methods=["GET", "POST"])
+def register():
+    if not has_users():
+        return redirect(url_for("setup"))
+    message = ""
+    ok = False
+    if request.method == "POST":
+        username = request.form.get("username", "").strip()
+        password = request.form.get("password", "")
+        data = read_users()
+        if not USERNAME_RE.match(username):
+            message = "Use 3-32 letters, numbers, dots, dashes, or underscores."
+        elif len(password) < 8:
+            message = "Password must be at least 8 characters."
+        elif username in data["users"]:
+            message = "That username already exists."
+        else:
+            data["users"][username] = {"password": generate_password_hash(password), "role": "user", "approved": False}
+            write_users(data)
+            message = "Account requested. An admin can approve it."
+            ok = True
+    body = """
+    <form method="post"><label>Username</label><input name="username" autocomplete="username" required autofocus>
+    <label>Password</label><input name="password" type="password" autocomplete="new-password" required minlength="8">
+    <button type="submit">Request Access</button></form><a class="link-btn secondary" href="/login">Back to Login</a>"""
+    return auth_page("Request Access", body, message, ok)
+
+
+@app.route("/logout")
+def logout():
+    session.clear()
+    return redirect(url_for("login"))
+
+ADMIN_HTML = r"""<!DOCTYPE html>
+<html lang="en"><head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Pi Lyrics - Admin</title>
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;800&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#0d0f14;--surface:#161920;--border:#252830;--accent:#ffc83d;--text:#e8eaf0;--muted:#6b7280;--danger:#ef4444;--success:#22c55e}
+*{box-sizing:border-box}body{margin:0;min-height:100vh;background:var(--bg);color:var(--text);font-family:'DM Sans',sans-serif}
+header{display:flex;align-items:center;gap:14px;padding:22px 28px;background:var(--surface);border-bottom:1px solid var(--border)}
+.logo{font-family:'Syne',sans-serif;font-weight:800;font-size:1.35rem}.logo span{color:var(--accent)}.spacer{flex:1}a{color:var(--accent);text-decoration:none}
+main{max-width:860px;margin:0 auto;padding:30px 22px}h1{font-family:'Syne',sans-serif;font-size:1.1rem;margin:0 0 18px}.msg{color:var(--success);margin-bottom:14px}
+.row{display:grid;grid-template-columns:1fr auto;gap:12px;align-items:center;background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:14px 16px;margin-bottom:10px}
+.name{font-weight:700}.meta{color:var(--muted);font-size:.82rem;margin-top:2px}.actions{display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end}
+button{border:1px solid var(--border);border-radius:7px;padding:7px 10px;background:transparent;color:var(--text);font:inherit;cursor:pointer}.primary{background:var(--accent);color:var(--bg);border-color:var(--accent);font-weight:700}.danger{color:var(--danger)}.disabled{color:var(--muted)}
+@media(max-width:640px){.row{grid-template-columns:1fr}.actions{justify-content:flex-start}}
+</style></head><body><header><div class="logo">Pi <span>Lyrics</span></div><div class="spacer"></div><a href="/">Slides</a><a href="/logout">Logout</a></header>
+<main><h1>User Admin</h1>{% if message %}<div class="msg">{{ message }}</div>{% endif %}
+{% for username, user in users.items() %}
+<div class="row"><div><div class="name">{{ username }}</div><div class="meta">{{ user.role }} · {{ 'approved' if user.approved else 'pending approval' }}{% if username == owner %} · owner{% endif %}</div></div>
+<div class="actions">
+{% if username == owner %}<span class="disabled">Protected owner</span>{% elif not user.approved %}<form method="post"><input type="hidden" name="username" value="{{ username }}"><button class="primary" name="action" value="approve">Approve</button></form>{% endif %}
+{% if username != owner and user.approved and user.role != 'admin' %}<form method="post"><input type="hidden" name="username" value="{{ username }}"><button name="action" value="make_admin">Make Admin</button></form>{% endif %}
+{% if username != owner and user.approved and user.role == 'admin' %}<form method="post"><input type="hidden" name="username" value="{{ username }}"><button name="action" value="make_user">Make User</button></form>{% endif %}
+{% if username != owner %}<form method="post"><input type="hidden" name="username" value="{{ username }}"><button class="danger" name="action" value="delete">Delete</button></form>{% endif %}
+</div></div>{% endfor %}</main></body></html>"""
+
+
+@app.route("/admin", methods=["GET", "POST"])
+def admin():
+    if not is_admin_user():
+        abort(403)
+    data = read_users()
+    message = ""
+    if request.method == "POST":
+        username = request.form.get("username", "")
+        action = request.form.get("action", "")
+        if username == data.get("owner"):
+            message = "Owner account cannot be changed."
+        elif username in data["users"]:
+            if action == "approve":
+                data["users"][username]["approved"] = True
+                message = f"Approved {username}."
+            elif action == "make_admin":
+                data["users"][username]["role"] = "admin"
+                data["users"][username]["approved"] = True
+                message = f"{username} is now an admin."
+            elif action == "make_user":
+                data["users"][username]["role"] = "user"
+                message = f"{username} is now a regular user."
+            elif action == "delete":
+                del data["users"][username]
+                message = f"Deleted {username}."
+            write_users(data)
+    return render_template_string(ADMIN_HTML, users=data["users"], owner=data.get("owner"), message=message)
 
 
 # ── Order helpers ─────────────────────────────────────────────────────────────
@@ -260,7 +497,10 @@ HTML = r"""<!DOCTYPE html>
   }
   .logo { font-family: 'Syne', sans-serif; font-weight: 800; font-size: 1.5rem; }
   .logo span { color: var(--accent); }
-  .subtitle { color: var(--muted); font-size: .85rem; margin-left: auto; }
+  .spacer { flex: 1; }
+  .subtitle { color: var(--muted); font-size: .85rem; }
+  .account-nav { display: flex; align-items: center; gap: 10px; font-size: .82rem; color: var(--muted); }
+  .account-nav a { color: var(--accent); text-decoration: none; }
   .status-dot {
     width: 8px; height: 8px; border-radius: 50%;
     background: var(--success);
@@ -483,8 +723,14 @@ HTML = r"""<!DOCTYPE html>
 <header>
   <div>
     <div class="logo">Pi <span>Lyrics</span></div>
+    <div class="subtitle">Slide Manager</div>
   </div>
-  <div class="subtitle">Slide Manager</div>
+  <div class="spacer"></div>
+  <div class="account-nav">
+    <span>{{ username }}</span>
+    {% if is_admin %}<a href="/admin">Admin</a>{% endif %}
+    <a href="/logout">Logout</a>
+  </div>
   <div class="status-dot" title="Server running"></div>
 </header>
 
@@ -962,7 +1208,7 @@ setInterval(loadFiles, 5000);
 
 @app.route("/")
 def index():
-    return render_template_string(HTML)
+    return render_template_string(HTML, username=current_username(), is_admin=is_admin_user())
 
 
 if __name__ == "__main__":

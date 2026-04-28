@@ -27,6 +27,8 @@ htmlcov/
 *.log
 control.json
 state.json
+secret.key
+users.json
 
 # Editor and OS files
 .vscode/
