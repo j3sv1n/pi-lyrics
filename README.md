@@ -1,4 +1,5 @@
-# Pi Lyrics
+<h1 style="font-family:'Syne', sans-serif; font-weight:800;
+  color:#fff;">Pi <span style="color:#ffc83d;">Lyrics</span></h1>
 
 A web-based slide management system designed for displaying PDF slides on a vertical monitor, perfect for church services, presentations, or any scenario requiring sequential slide display with remote control capabilities.
 
