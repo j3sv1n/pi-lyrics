@@ -135,12 +135,11 @@ def api_blank():
 
     # Insert into order
     order = read_order()
-    # read_order may not include the new file yet (it just appeared on disk)
-    if candidate not in order:
-        if after < 0 or after >= len(order):
-            order.append(candidate)
-        else:
-            order.insert(after + 1, candidate)
+    order = [f for f in order if f != candidate]
+    if after < 0 or after >= len(order):
+        order.append(candidate)
+    else:
+        order.insert(after + 1, candidate)
     write_order(order)
     return jsonify({"created": candidate, "order": read_order()})
 
@@ -171,7 +170,9 @@ def api_delete(filename):
 @app.route("/api/rename", methods=["POST"])
 def api_rename():
     data = request.get_json()
-    old = secure_filename(data.get("old", ""))
+    old_raw = data.get("old", "")
+    existing = set(p.name for p in PDF_DIR.glob("*.pdf"))
+    old = old_raw if old_raw in existing else secure_filename(old_raw)
     new = secure_filename(data.get("new", ""))
     if not old or not new:
         return jsonify({"error": "Missing names"}), 400
@@ -179,12 +180,13 @@ def api_rename():
         new += ".pdf"
     src = PDF_DIR / old
     dst = PDF_DIR / new
+    order = read_order()
     if not src.exists():
         return jsonify({"error": "File not found"}), 404
     if dst.exists():
         return jsonify({"error": "Name already taken"}), 409
     src.rename(dst)
-    order = [(new if f == old else f) for f in read_order()]
+    order = [(new if f == old else f) for f in order]
     write_order(order)
     return jsonify({"renamed": new, "order": order})
 
@@ -505,6 +507,7 @@ HTML = r"""<!DOCTYPE html>
 let files      = [];
 let pageCounts = {};   // { filename: pageCount }
 let dragSrc    = null;
+let renaming   = false;
 
 // ── Toast ─────────────────────────────────────────────────────────────────────
 function toast(msg, type='success', dur=2800) {
@@ -591,20 +594,61 @@ function render() {
 
   // Inline rename
   list.querySelectorAll('.file-name').forEach(el => {
-    el.addEventListener('click', () => startRename(el));
+    el.addEventListener('click', e => startRename(el, e));
   });
 }
 
-function startRename(el) {
+function caretIndexFromPoint(el, clientX) {
+  const text = el.dataset.name || '';
+  const style = getComputedStyle(el);
+  const canvas = caretIndexFromPoint._canvas || (caretIndexFromPoint._canvas = document.createElement('canvas'));
+  const ctx = canvas.getContext('2d');
+  ctx.font = `${style.fontWeight} ${style.fontSize} ${style.fontFamily}`;
+  const x = Math.max(0, clientX - el.getBoundingClientRect().left);
+  for (let i = 0; i < text.length; i++) {
+    const mid = ctx.measureText(text.slice(0, i) + text[i]).width - ctx.measureText(text[i]).width / 2;
+    if (x < mid) return i;
+  }
+  return text.length;
+}
+
+function inputCaretIndexFromPoint(inp, clientX) {
+  const style = getComputedStyle(inp);
+  const canvas = inputCaretIndexFromPoint._canvas || (inputCaretIndexFromPoint._canvas = document.createElement('canvas'));
+  const ctx = canvas.getContext('2d');
+  ctx.font = `${style.fontWeight} ${style.fontSize} ${style.fontFamily}`;
+  const paddingLeft = parseFloat(style.paddingLeft) || 0;
+  const x = Math.max(0, clientX - inp.getBoundingClientRect().left - paddingLeft + inp.scrollLeft);
+  for (let i = 0; i < inp.value.length; i++) {
+    const mid = ctx.measureText(inp.value.slice(0, i) + inp.value[i]).width - ctx.measureText(inp.value[i]).width / 2;
+    if (x < mid) return i;
+  }
+  return inp.value.length;
+}
+
+function startRename(el, event) {
+  renaming = true;
   const oldName = el.dataset.name;
+  const caretPos = event ? caretIndexFromPoint(el, event.clientX) : oldName.length;
+  let committed = false;
+  const item = el.closest('.file-item');
   const inp = document.createElement('input');
   inp.className = 'file-name-input';
   inp.value = oldName;
   el.replaceWith(inp);
-  inp.focus(); inp.select();
+  if (item) item.draggable = false;
+  inp.focus();
+  requestAnimationFrame(() => inp.setSelectionRange(caretPos, caretPos));
+  inp.addEventListener('pointerup', e => {
+    e.stopPropagation();
+    const pos = inputCaretIndexFromPoint(inp, e.clientX);
+    inp.setSelectionRange(pos, pos);
+  });
   async function commit() {
+    if (committed) return;
+    committed = true;
     let newName = inp.value.trim();
-    if (!newName || newName === oldName) { await loadFiles(); return; }
+    if (!newName || newName === oldName) { renaming = false; await loadFiles(); return; }
     if (!newName.toLowerCase().endsWith('.pdf')) newName += '.pdf';
     try {
       const d = await api('/api/rename', {
@@ -613,9 +657,11 @@ function startRename(el) {
         body: JSON.stringify({old: oldName, new: newName})
       });
       files = d.order;
+      renaming = false;
       render();
       toast(`Renamed to ${newName}`);
     } catch(err) {
+      renaming = false;
       toast(err.message, 'error');
       await loadFiles();
     }
@@ -623,12 +669,13 @@ function startRename(el) {
   inp.addEventListener('blur', commit);
   inp.addEventListener('keydown', e => {
     if (e.key === 'Enter') { e.preventDefault(); inp.blur(); }
-    if (e.key === 'Escape') { inp.removeEventListener('blur', commit); loadFiles(); }
+    if (e.key === 'Escape') { renaming = false; committed = true; inp.removeEventListener('blur', commit); loadFiles(); }
   });
 }
 
 // ── Load ──────────────────────────────────────────────────────────────────────
 async function loadFiles() {
+  if (renaming) return;
   try {
     [files, pageCounts] = await Promise.all([
       api('/api/files'),
