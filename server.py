@@ -8,6 +8,7 @@ Runs on port 5000.
 import os
 import json
 import shutil
+import re
 from pathlib import Path
 from flask import (Flask, request, jsonify, send_from_directory,
                    render_template_string, abort)
@@ -56,6 +57,12 @@ def pdf_page_count(filename):
         return 1
 
 
+def remove_digits_from_filename(filename):
+    stem, ext = os.path.splitext(filename)
+    stem = re.sub(r"\d+", "", stem)
+    return (stem or "upload") + ext
+
+
 # ── API endpoints ─────────────────────────────────────────────────────────────
 
 @app.route("/api/files", methods=["GET"])
@@ -78,7 +85,7 @@ def api_upload():
     for f in request.files.getlist("files"):
         if f.filename == "":
             continue
-        name = secure_filename(f.filename)
+        name = remove_digits_from_filename(secure_filename(f.filename))
         if not name.lower().endswith(".pdf"):
             continue
         dest = PDF_DIR / name
@@ -109,10 +116,20 @@ def api_blank():
         candidate = f"{base}_{counter}.pdf"
         counter  += 1
 
-    # Generate a blank white A4 PDF with PyMuPDF
+    # Generate a black A4 PDF with centered label text
     doc  = fitz.open()
     page = doc.new_page(width=595, height=842)   # A4 portrait in points
-    page.draw_rect(page.rect, color=(1, 1, 1), fill=(1, 1, 1))
+    page.draw_rect(page.rect, color=(0, 0, 0), fill=(0, 0, 0))
+    font_size = 40
+    text_rect = fitz.Rect(0, page.rect.height / 2 - font_size, page.rect.width, page.rect.height / 2 + font_size)
+    page.insert_textbox(
+        text_rect,
+        label or base,
+        fontsize=font_size,
+        fontname="helv",
+        color=(1, 200 / 255, 61 / 255),
+        align=fitz.TEXT_ALIGN_CENTER,
+    )
     doc.save(str(PDF_DIR / candidate))
     doc.close()
 

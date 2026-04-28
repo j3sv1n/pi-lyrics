@@ -259,6 +259,7 @@ def main():
                 next_suffix = ""
 
             display_name = next_name[:-4] if next_name.lower().endswith(".pdf") else next_name
+            display_name = display_name.replace("_", " ")
             label    = font_label.render("Next:  ", True, ACCENT)
             nxt_txt  = font_name.render(display_name + next_suffix, True, TEXT_COLOR)
             total_w  = label.get_width() + nxt_txt.get_width()
