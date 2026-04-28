@@ -497,7 +497,8 @@ HTML = r"""<!DOCTYPE html>
   }
   .logo { font-family: 'Syne', sans-serif; font-weight: 800; font-size: 1.5rem; }
   .logo span { color: var(--accent); }
-  .subtitle { color: var(--muted); font-size: .85rem; margin-left: auto; }
+  .spacer { flex: 1; }
+  .subtitle { color: var(--muted); font-size: .85rem; }
   .account-nav { display: flex; align-items: center; gap: 10px; font-size: .82rem; color: var(--muted); }
   .account-nav a { color: var(--accent); text-decoration: none; }
   .status-dot {
@@ -722,8 +723,9 @@ HTML = r"""<!DOCTYPE html>
 <header>
   <div>
     <div class="logo">Pi <span>Lyrics</span></div>
+    <div class="subtitle">Slide Manager</div>
   </div>
-  <div class="subtitle">Slide Manager</div>
+  <div class="spacer"></div>
   <div class="account-nav">
     <span>{{ username }}</span>
     {% if is_admin %}<a href="/admin">Admin</a>{% endif %}
