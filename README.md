@@ -1,7 +1,7 @@
 <h1 style="font-family:'Syne', sans-serif; font-weight:800;
   color:#fff;">Pi <span style="color:#ffc83d;">Lyrics</span></h1>
 
-A web-based slide management system designed for displaying PDF slides on a vertical monitor, perfect for church services, presentations, or any scenario requiring sequential slide display with remote control capabilities.
+A web-based slide management system designed to run smoothly on Raspberry Pi devices like the Zero 2 W, with support for displaying PDF slides on vertical monitors. Ideal for church services, presentations, or any scenario requiring sequential lyric slide playback with remote control capabilities.
 
 ## Features
 
@@ -37,7 +37,9 @@ A web-based slide management system designed for displaying PDF slides on a vert
    pip install flask werkzeug pymupdf pygame watchdog
    ```
 
-3. Run the setup:
+3. On Raspberry Pi systems, make sure Python, pip, and required libraries are installed and that the Pi can access the display hardware.
+
+4. Run the setup:
    - Start the server: `python server.py`
    - On first run, you'll be prompted to create an owner account
    - The web interface will be available at `http://localhost:5000`
