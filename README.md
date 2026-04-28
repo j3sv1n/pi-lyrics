@@ -98,21 +98,37 @@ bash start-display.sh
 
 ## Usage
 
-### Starting the Server
+### Web Server
 
-Run the web server:
-```bash
-python server.py
+The web server starts automatically after boot via systemd. Access it at:
+```
+http://localhost:5000
 ```
 
-The server runs on port 5000 by default. Access the web interface at `http://localhost:5000`.
-
-### Starting the Display
-
-Run the display application on the machine connected to your vertical monitor:
+To check the server status or restart it manually:
 ```bash
-python display.py
+sudo systemctl status pi-lyrics-server.service
+sudo systemctl restart pi-lyrics-server.service
 ```
+
+### Display Application
+
+Start the display app on the Pi monitor:
+```bash
+bash start-display.sh
+```
+
+Or run it manually with:
+```bash
+DISPLAY=:0 ~/pi-lyrics/venv/bin/python ~/pi-lyrics/display.py &
+```
+
+To enable autostart on login:
+```bash
+bash enable-autostart.sh
+```
+
+### Web Interface
 
 The display will automatically connect to the server and show slides in fullscreen mode.
 
@@ -120,12 +136,14 @@ The display will automatically connect to the server and show slides in fullscre
 
 The rotated display layout is designed for vertical monitors and shows the next slide preview while rendering the current PDF in fullscreen.
 
-### Web Interface
+#### First-time setup
 
 1. **Setup**: On first run, create an owner account and choose whether to enable login
 2. **Login** (if enabled): Use your username and password to access the system
 
    ![Pi Lyrics Login](screenshots/login.png)
+
+#### Using the dashboard
 
 3. **Upload Slides**: Drag and drop PDF files or click to browse
 4. **Reorder Slides**: Drag slides to change their order
