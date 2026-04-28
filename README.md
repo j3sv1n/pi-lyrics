@@ -9,7 +9,7 @@ A web-based slide management system designed to run smoothly on Raspberry Pi dev
 - **Blank Slides**: Insert custom blank slides with labels for transitions or breaks
 - **Real-time Display**: Dedicated display application that shows slides on a rotated monitor
 - **Remote Control**: Navigate slides via web interface or keyboard shortcuts on the display
-- **User Authentication**: Secure login system with admin capabilities
+- **Optional Authentication**: Secure login system with admin capabilities — or disable it for public access
 - **File Management**: Automatic PDF page counting and multi-page support
 - **Drag & Drop**: Intuitive reordering of slides via drag-and-drop
 - **Responsive Design**: Works on desktop and mobile devices
@@ -70,15 +70,16 @@ The rotated display layout is designed for vertical monitors and shows the next 
 
 ### Web Interface
 
-1. **Login**: Use your username and password to access the system
+1. **Setup**: On first run, create an owner account and choose whether to enable login
+2. **Login** (if enabled): Use your username and password to access the system
 
    ![Pi Lyrics Login](screenshots/login.png)
 
-2. **Upload Slides**: Drag and drop PDF files or click to browse
-3. **Reorder Slides**: Drag slides to change their order
-4. **Insert Blank Slides**: Click "Blank Slide" to add labeled blank slides
-5. **Control Display**: Use Previous/Next buttons to navigate slides remotely
-6. **Rename Slides**: Click on any slide name to rename it
+3. **Upload Slides**: Drag and drop PDF files or click to browse
+4. **Reorder Slides**: Drag slides to change their order
+5. **Insert Blank Slides**: Click "Blank Slide" to add labeled blank slides
+6. **Control Display**: Use Previous/Next buttons to navigate slides remotely
+7. **Rename Slides**: Click on any slide name to rename it
 
 The dashboard combines upload, queue management, and display controls into a single unified interface.
 
@@ -92,7 +93,12 @@ The dashboard combines upload, queue management, and display controls into a sin
 
 ### Admin Panel
 
-Access the admin panel at `http://localhost:5000/admin` (admin users only) to manage user accounts.
+Access the admin panel at `http://localhost:5000/admin` (admin users only) to:
+
+- **Manage Users**: Approve user requests, make users admin or regular users, and delete accounts
+- **Configure Login**: Enable or disable the login system (owner only) — toggle between requiring authentication or allowing public access
+
+The owner account is protected and cannot be deleted.
 
 ## Configuration
 
@@ -103,8 +109,18 @@ The application uses several configuration files:
 - `control.json`: Handles remote control commands
 - `users.json`: User account data (encrypted)
 - `secret.key`: Flask session secret
+- `config.json`: Application settings (login system enabled/disabled)
 
 All files are created automatically in the project directory.
+
+### Login System Configuration
+
+On first setup, you'll be prompted to choose whether to enable or disable the login system:
+
+- **Login Enabled** (default): Users must authenticate with username and password. Admin panel accessible at `/admin`.
+- **Login Disabled**: Anyone can access the app without authentication. All authentication UI is hidden.
+
+To change this setting anytime, the owner can visit the Admin Panel at `http://localhost:5000/admin` and toggle the "Login System" setting. Disabling login preserves all existing user accounts for future re-enabling.
 
 ## API Reference
 
@@ -153,6 +169,7 @@ pi-lyrics/
 ├── state.json         # Display state
 ├── control.json       # Remote control commands
 ├── users.json         # User accounts
+├── config.json        # Application settings (login system)
 └── secret.key         # Session secret
 ```
 

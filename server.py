@@ -25,6 +25,7 @@ CONTROL_FILE = BASE_DIR / "control.json"
 STATE_FILE   = BASE_DIR / "state.json"
 USERS_FILE   = BASE_DIR / "users.json"
 SECRET_FILE  = BASE_DIR / "secret.key"
+CONFIG_FILE  = BASE_DIR / "config.json"
 
 PDF_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -66,6 +67,25 @@ def write_users(data):
         pass
 
 
+def read_config():
+    if CONFIG_FILE.exists():
+        try:
+            data = json.loads(CONFIG_FILE.read_text())
+            if "login_enabled" in data:
+                return data
+        except Exception:
+            pass
+    return {"login_enabled": True}
+
+
+def write_config(data):
+    CONFIG_FILE.write_text(json.dumps(data, indent=2))
+
+
+def is_login_enabled():
+    return read_config().get("login_enabled", True)
+
+
 def has_users():
     return bool(read_users()["users"])
 
@@ -101,11 +121,14 @@ def safe_next_url(value):
 
 @app.before_request
 def require_login():
-    public = {"login", "register", "setup", "logout"}
+    public = {"login", "register", "setup", "configure_login", "logout"}
     if request.endpoint in public:
         return None
     if not has_users():
         return redirect(url_for("setup"))
+    if not is_login_enabled():
+        # Login disabled - no authentication required
+        return None
     user = current_user()
     if not user or not user.get("approved"):
         session.clear()
@@ -149,12 +172,40 @@ def setup():
         else:
             write_users({"owner": username, "users": {username: {"password": generate_password_hash(password), "role": "owner", "approved": True}}})
             session["username"] = username
-            return redirect(url_for("index"))
+            return redirect(url_for("configure_login"))
     body = """
     <form method="post"><label>Owner username</label><input name="username" autocomplete="username" required autofocus>
     <label>Password</label><input name="password" type="password" autocomplete="new-password" required minlength="8">
     <button type="submit">Create Owner Account</button></form><p class="hint">This first account becomes the protected owner account.</p>"""
     return auth_page("Create Owner Account", body, message)
+
+
+@app.route("/configure-login", methods=["GET", "POST"])
+def configure_login():
+    if not has_users():
+        return redirect(url_for("setup"))
+    user = current_user()
+    if not user or user.get("role") != "owner":
+        return redirect(url_for("index"))
+    if request.method == "POST":
+        action = request.form.get("action", "")
+        config = read_config()
+        if action == "enable":
+            config["login_enabled"] = True
+        elif action == "disable":
+            config["login_enabled"] = False
+        write_config(config)
+        return redirect(url_for("index"))
+    body = """
+    <div style="text-align: center; margin-bottom: 28px;">
+      <p style="color: var(--muted); font-size: 0.9rem; line-height: 1.6;">Choose whether the app should require login. You can change this anytime from the Admin panel.</p>
+    </div>
+    <form method="post" style="display: flex; flex-direction: column; gap: 12px;">
+      <button type="submit" name="action" value="enable" class="btn-primary" style="width: 100%; padding: 12px; border-radius: 7px; border: none; cursor: pointer;">✓ Enable Login</button>
+      <button type="submit" name="action" value="disable" class="secondary" style="width: 100%; padding: 12px; border-radius: 7px; border: 1px solid var(--border); background: transparent; color: var(--muted); cursor: pointer; font-weight: 500;">Skip Login</button>
+    </form>
+    <p class="hint" style="text-align: center; margin-top: 20px;">With login enabled: users must authenticate to use the app.<br/>With login disabled: anyone can access the app freely.</p>"""
+    return auth_page("Configure Login", body)
 
 
 @app.route("/login", methods=["GET", "POST"])
@@ -220,12 +271,19 @@ ADMIN_HTML = r"""<!DOCTYPE html>
 header{display:flex;align-items:center;gap:14px;padding:22px 28px;background:var(--surface);border-bottom:1px solid var(--border)}
 .logo{font-family:'Syne',sans-serif;font-weight:800;font-size:1.35rem}.logo span{color:var(--accent)}.spacer{flex:1}a{color:var(--accent);text-decoration:none}
 main{max-width:860px;margin:0 auto;padding:30px 22px}h1{font-family:'Syne',sans-serif;font-size:1.1rem;margin:0 0 18px}.msg{color:var(--success);margin-bottom:14px}
+.section{margin-bottom:32px}.section-title{font-family:'Syne',sans-serif;font-size:0.95rem;font-weight:700;margin:0 0 16px;color:var(--text)}
 .row{display:grid;grid-template-columns:1fr auto;gap:12px;align-items:center;background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:14px 16px;margin-bottom:10px}
 .name{font-weight:700}.meta{color:var(--muted);font-size:.82rem;margin-top:2px}.actions{display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end}
 button{border:1px solid var(--border);border-radius:7px;padding:7px 10px;background:transparent;color:var(--text);font:inherit;cursor:pointer}.primary{background:var(--accent);color:var(--bg);border-color:var(--accent);font-weight:700}.danger{color:var(--danger)}.disabled{color:var(--muted)}
+.setting-row{display:grid;grid-template-columns:1fr auto;gap:12px;align-items:center;background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:16px;margin-bottom:10px}
+.setting-info .label{font-weight:600;font-size:.95rem;margin-bottom:4px}.setting-info .desc{color:var(--muted);font-size:.82rem}
 @media(max-width:640px){.row{grid-template-columns:1fr}.actions{justify-content:flex-start}}
 </style></head><body><header><div class="logo">Pi <span>Lyrics</span></div><div class="spacer"></div><a href="/">Slides</a><a href="/logout">Logout</a></header>
-<main><h1>User Admin</h1>{% if message %}<div class="msg">{{ message }}</div>{% endif %}
+<main><h1>Admin Panel</h1>{% if message %}<div class="msg">{{ message }}</div>{% endif %}
+{% if is_owner %}<div class="section"><div class="section-title">System Settings</div>
+<div class="setting-row"><div class="setting-info"><div class="label">Login System</div><div class="desc">{% if login_enabled %}Enabled — users must login{% else %}Disabled — anyone can access freely{% endif %}</div></div>
+<div class="actions">{% if login_enabled %}<form method="post" style="display:inline"><input type="hidden" name="login_action" value="disable"><button class="primary" onclick="return confirm('Disable login? Existing users will be preserved but login will not be required.')">Disable Login</button></form>{% else %}<form method="post" style="display:inline"><input type="hidden" name="login_action" value="enable"><button class="primary">Enable Login</button></form>{% endif %}</div></div></div>{% endif %}
+<div class="section"><div class="section-title">User Management</div>
 {% for username, user in users.items() %}
 <div class="row"><div><div class="name">{{ username }}</div><div class="meta">{{ user.role }} · {{ 'approved' if user.approved else 'pending approval' }}{% if username == owner %} · owner{% endif %}</div></div>
 <div class="actions">
@@ -233,7 +291,7 @@ button{border:1px solid var(--border);border-radius:7px;padding:7px 10px;backgro
 {% if username != owner and user.approved and user.role != 'admin' %}<form method="post"><input type="hidden" name="username" value="{{ username }}"><button name="action" value="make_admin">Make Admin</button></form>{% endif %}
 {% if username != owner and user.approved and user.role == 'admin' %}<form method="post"><input type="hidden" name="username" value="{{ username }}"><button name="action" value="make_user">Make User</button></form>{% endif %}
 {% if username != owner %}<form method="post"><input type="hidden" name="username" value="{{ username }}"><button class="danger" name="action" value="delete">Delete</button></form>{% endif %}
-</div></div>{% endfor %}</main></body></html>"""
+</div></div>{% endfor %}</div></main></body></html>"""
 
 
 @app.route("/admin", methods=["GET", "POST"])
@@ -241,28 +299,43 @@ def admin():
     if not is_admin_user():
         abort(403)
     data = read_users()
+    owner = data.get("owner")
+    is_owner = current_username() == owner
     message = ""
     if request.method == "POST":
-        username = request.form.get("username", "")
-        action = request.form.get("action", "")
-        if username == data.get("owner"):
-            message = "Owner account cannot be changed."
-        elif username in data["users"]:
-            if action == "approve":
-                data["users"][username]["approved"] = True
-                message = f"Approved {username}."
-            elif action == "make_admin":
-                data["users"][username]["role"] = "admin"
-                data["users"][username]["approved"] = True
-                message = f"{username} is now an admin."
-            elif action == "make_user":
-                data["users"][username]["role"] = "user"
-                message = f"{username} is now a regular user."
-            elif action == "delete":
-                del data["users"][username]
-                message = f"Deleted {username}."
-            write_users(data)
-    return render_template_string(ADMIN_HTML, users=data["users"], owner=data.get("owner"), message=message)
+        login_action = request.form.get("login_action", "")
+        if login_action:
+            if not is_owner:
+                abort(403)
+            config = read_config()
+            if login_action == "enable":
+                config["login_enabled"] = True
+                message = "Login system enabled."
+            elif login_action == "disable":
+                config["login_enabled"] = False
+                message = "Login system disabled."
+            write_config(config)
+        else:
+            username = request.form.get("username", "")
+            action = request.form.get("action", "")
+            if username == owner:
+                message = "Owner account cannot be changed."
+            elif username in data["users"]:
+                if action == "approve":
+                    data["users"][username]["approved"] = True
+                    message = f"Approved {username}."
+                elif action == "make_admin":
+                    data["users"][username]["role"] = "admin"
+                    data["users"][username]["approved"] = True
+                    message = f"{username} is now an admin."
+                elif action == "make_user":
+                    data["users"][username]["role"] = "user"
+                    message = f"{username} is now a regular user."
+                elif action == "delete":
+                    del data["users"][username]
+                    message = f"Deleted {username}."
+                write_users(data)
+    return render_template_string(ADMIN_HTML, users=data["users"], owner=owner, is_owner=is_owner, login_enabled=is_login_enabled(), message=message)
 
 
 # ── Order helpers ─────────────────────────────────────────────────────────────
@@ -726,11 +799,11 @@ HTML = r"""<!DOCTYPE html>
     <div class="subtitle">Slide Manager</div>
   </div>
   <div class="spacer"></div>
-  <div class="account-nav">
+  {% if login_enabled %}<div class="account-nav">
     <span>{{ username }}</span>
     {% if is_admin %}<a href="/admin">Admin</a>{% endif %}
     <a href="/logout">Logout</a>
-  </div>
+  </div>{% endif %}
   <div class="status-dot" title="Server running"></div>
 </header>
 
@@ -1208,7 +1281,7 @@ setInterval(loadFiles, 5000);
 
 @app.route("/")
 def index():
-    return render_template_string(HTML, username=current_username(), is_admin=is_admin_user())
+    return render_template_string(HTML, username=current_username(), is_admin=is_admin_user(), login_enabled=is_login_enabled())
 
 
 if __name__ == "__main__":
