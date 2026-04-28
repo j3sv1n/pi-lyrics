@@ -16,19 +16,31 @@ A web-based slide management system designed to run smoothly on Raspberry Pi dev
 
 ## Installation
 
-### Preferred install path
+### Prerequisites
 
-Use this installer from the project root on Raspberry Pi OS:
-```bash
-sudo bash install.sh
-```
+- Raspberry Pi OS installed on your Pi device
+- Internet connection for downloading packages
 
-It will:
+### Setup
+
+1. Clone the repository:
+   ```bash
+   git clone <repository-url>
+   cd pi-lyrics
+   ```
+
+2. Run the installer:
+   ```bash
+   sudo bash install.sh
+   ```
+
+The installer will:
 - install required system packages with `apt`
 - create `~/pi-lyrics`
 - copy `display.py` and `server.py` into that directory
 - create a Python venv with `--system-site-packages`
 - install `PyMuPDF` in the venv using a custom `TMPDIR`
+- set up a systemd service for the web server (starts automatically on boot)
 
 ### Why this is needed
 
@@ -77,10 +89,7 @@ This launches the display app after login with a short delay, giving X time to b
 
 ### Starting the app
 
-Start the server from the app directory:
-```bash
-cd ~/pi-lyrics && python server.py
-```
+The web server starts automatically via systemd on boot. Access it at `http://localhost:5000`.
 
 Start the display app manually on the Pi display:
 ```bash
