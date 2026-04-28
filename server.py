@@ -82,6 +82,20 @@ def write_config(data):
     CONFIG_FILE.write_text(json.dumps(data, indent=2))
 
 
+def reset_app_data():
+    for pdf_file in PDF_DIR.glob("*.pdf"):
+        try:
+            pdf_file.unlink()
+        except Exception:
+            pass
+    for path in (ORDER_FILE, STATE_FILE, CONTROL_FILE, USERS_FILE, CONFIG_FILE):
+        try:
+            if path.exists():
+                path.unlink()
+        except Exception:
+            pass
+
+
 def is_login_enabled():
     return read_config().get("login_enabled", True)
 
@@ -277,6 +291,10 @@ main{max-width:860px;margin:0 auto;padding:30px 22px}h1{font-family:'Syne',sans-
 button{border:1px solid var(--border);border-radius:7px;padding:7px 10px;background:transparent;color:var(--text);font:inherit;cursor:pointer}.primary{background:var(--accent);color:var(--bg);border-color:var(--accent);font-weight:700}.danger{color:var(--danger)}.disabled{color:var(--muted)}
 .setting-row{display:grid;grid-template-columns:1fr auto;gap:12px;align-items:center;background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:16px;margin-bottom:10px}
 .setting-info .label{font-weight:600;font-size:.95rem;margin-bottom:4px}.setting-info .desc{color:var(--muted);font-size:.82rem}
+.danger-zone{background:#2a1313;border:1px solid rgba(239,68,68,.35);border-radius:14px;padding:20px;margin-top:24px}
+.danger-zone p{color:var(--muted);font-size:.88rem;line-height:1.6;margin-bottom:18px}
+.danger-zone input[type=password]{display:none}
+.danger-zone button{width:auto;min-width:120px;border:1px solid transparent;border-radius:10px;padding:10px 16px;background:#f84747;color:#fff;font-weight:700;cursor:pointer}
 @media(max-width:640px){.row{grid-template-columns:1fr}.actions{justify-content:flex-start}}
 </style></head><body><header><div class="logo">Pi <span>Lyrics</span></div><div class="spacer"></div><a href="/">Slides</a><a href="/logout">Logout</a></header>
 <main><h1>Admin Panel</h1>{% if message %}<div class="msg">{{ message }}</div>{% endif %}
@@ -291,7 +309,8 @@ button{border:1px solid var(--border);border-radius:7px;padding:7px 10px;backgro
 {% if username != owner and user.approved and user.role != 'admin' %}<form method="post"><input type="hidden" name="username" value="{{ username }}"><button name="action" value="make_admin">Make Admin</button></form>{% endif %}
 {% if username != owner and user.approved and user.role == 'admin' %}<form method="post"><input type="hidden" name="username" value="{{ username }}"><button name="action" value="make_user">Make User</button></form>{% endif %}
 {% if username != owner %}<form method="post"><input type="hidden" name="username" value="{{ username }}"><button class="danger" name="action" value="delete">Delete</button></form>{% endif %}
-</div></div>{% endfor %}</div></main></body></html>"""
+</div></div>{% endfor %}</div>
+{% if is_owner %}<div class="section"><div class="section-title">Danger Zone</div><div class="danger-zone"><p>Reset the app to factory state. This removes all uploaded slides and all user accounts, including the current owner. The app will restart at first-run setup.</p><form id="reset-form" method="post"><input type="hidden" name="reset_action" value="reset"><input type="hidden" id="reset-password" name="reset_password" value=""><button type="button" onclick="handleResetClick()">Reset</button></form></div></div>{% endif %}</main><script>function handleResetClick(){if(!confirm('Resetting will remove all slides and accounts. This cannot be undone. Continue?'))return;const pwd=prompt('Owner password:');if(pwd===null)return;document.getElementById('reset-password').value=pwd;document.getElementById('reset-form').submit();}</script></body></html>"""
 
 
 @app.route("/admin", methods=["GET", "POST"])
@@ -304,6 +323,7 @@ def admin():
     message = ""
     if request.method == "POST":
         login_action = request.form.get("login_action", "")
+        reset_action = request.form.get("reset_action", "")
         if login_action:
             if not is_owner:
                 abort(403)
@@ -315,6 +335,17 @@ def admin():
                 config["login_enabled"] = False
                 message = "Login system disabled."
             write_config(config)
+        elif reset_action:
+            if not is_owner:
+                abort(403)
+            password = request.form.get("reset_password", "")
+            owner_user = data["users"].get(owner, {})
+            if not owner_user or not check_password_hash(owner_user.get("password", ""), password):
+                message = "Invalid owner password."
+            else:
+                session.clear()
+                reset_app_data()
+                return redirect(url_for("setup"))
         else:
             username = request.form.get("username", "")
             action = request.form.get("action", "")

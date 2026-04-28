@@ -97,6 +97,7 @@ Access the admin panel at `http://localhost:5000/admin` (admin users only) to:
 
 - **Manage Users**: Approve user requests, make users admin or regular users, and delete accounts
 - **Configure Login**: Enable or disable the login system (owner only) — toggle between requiring authentication or allowing public access
+- **Reset App**: Owner-only reset to factory state, removing all slides and user accounts while preserving the app files
 
 The owner account is protected and cannot be deleted.
 
