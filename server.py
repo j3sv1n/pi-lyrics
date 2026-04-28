@@ -421,7 +421,7 @@ HTML = r"""<!DOCTYPE html>
 
 <header>
   <div>
-    <div class="logo">Church <span>Display</span></div>
+    <div class="logo">Pi <span>Lyrics</span></div>
   </div>
   <div class="subtitle">Slide Manager</div>
   <div class="status-dot" title="Server running"></div>
