@@ -180,12 +180,13 @@ def api_rename():
         new += ".pdf"
     src = PDF_DIR / old
     dst = PDF_DIR / new
+    order = read_order()
     if not src.exists():
         return jsonify({"error": "File not found"}), 404
     if dst.exists():
         return jsonify({"error": "Name already taken"}), 409
     src.rename(dst)
-    order = [(new if f == old else f) for f in read_order()]
+    order = [(new if f == old else f) for f in order]
     write_order(order)
     return jsonify({"renamed": new, "order": order})
 
@@ -593,19 +594,56 @@ function render() {
 
   // Inline rename
   list.querySelectorAll('.file-name').forEach(el => {
-    el.addEventListener('click', () => startRename(el));
+    el.addEventListener('click', e => startRename(el, e));
   });
 }
 
-function startRename(el) {
+function caretIndexFromPoint(el, clientX) {
+  const text = el.dataset.name || '';
+  const style = getComputedStyle(el);
+  const canvas = caretIndexFromPoint._canvas || (caretIndexFromPoint._canvas = document.createElement('canvas'));
+  const ctx = canvas.getContext('2d');
+  ctx.font = `${style.fontWeight} ${style.fontSize} ${style.fontFamily}`;
+  const x = Math.max(0, clientX - el.getBoundingClientRect().left);
+  for (let i = 0; i < text.length; i++) {
+    const mid = ctx.measureText(text.slice(0, i) + text[i]).width - ctx.measureText(text[i]).width / 2;
+    if (x < mid) return i;
+  }
+  return text.length;
+}
+
+function inputCaretIndexFromPoint(inp, clientX) {
+  const style = getComputedStyle(inp);
+  const canvas = inputCaretIndexFromPoint._canvas || (inputCaretIndexFromPoint._canvas = document.createElement('canvas'));
+  const ctx = canvas.getContext('2d');
+  ctx.font = `${style.fontWeight} ${style.fontSize} ${style.fontFamily}`;
+  const paddingLeft = parseFloat(style.paddingLeft) || 0;
+  const x = Math.max(0, clientX - inp.getBoundingClientRect().left - paddingLeft + inp.scrollLeft);
+  for (let i = 0; i < inp.value.length; i++) {
+    const mid = ctx.measureText(inp.value.slice(0, i) + inp.value[i]).width - ctx.measureText(inp.value[i]).width / 2;
+    if (x < mid) return i;
+  }
+  return inp.value.length;
+}
+
+function startRename(el, event) {
   renaming = true;
   const oldName = el.dataset.name;
+  const caretPos = event ? caretIndexFromPoint(el, event.clientX) : oldName.length;
   let committed = false;
+  const item = el.closest('.file-item');
   const inp = document.createElement('input');
   inp.className = 'file-name-input';
   inp.value = oldName;
   el.replaceWith(inp);
+  if (item) item.draggable = false;
   inp.focus();
+  requestAnimationFrame(() => inp.setSelectionRange(caretPos, caretPos));
+  inp.addEventListener('pointerup', e => {
+    e.stopPropagation();
+    const pos = inputCaretIndexFromPoint(inp, e.clientX);
+    inp.setSelectionRange(pos, pos);
+  });
   async function commit() {
     if (committed) return;
     committed = true;
