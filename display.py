@@ -116,6 +116,39 @@ def main():
     font_name  = pygame.font.SysFont("dejavusans", 48)
     font_msg   = pygame.font.SysFont("dejavusans", 36)
     font_idx   = pygame.font.SysFont("dejavusans", 28)   # dim index font
+    splash_font_name = "syne" if pygame.font.match_font("syne") else "dejavusans"
+    font_splash_title = pygame.font.SysFont(splash_font_name, 64, bold=True)
+    font_splash_sub = pygame.font.SysFont("dejavusans", 28)
+
+    def show_splash():
+        start = pygame.time.get_ticks()
+        while pygame.time.get_ticks() - start < 1800:
+            for event in pygame.event.get():
+                if event.type == pygame.QUIT:
+                    pygame.quit()
+                    sys.exit(0)
+
+            canvas.fill(BG_COLOR)
+            elapsed = pygame.time.get_ticks() - start
+            pulse = (pygame.math.Vector2(1, 0).rotate(elapsed * 0.18).x + 1) / 2
+            title = font_splash_title.render("Pi Lyrics", True, TEXT_COLOR)
+            subtitle = font_splash_sub.render("Loading display...", True, TEXT_COLOR)
+            y = VH // 2 - title.get_height()
+            canvas.blit(title, ((VW - title.get_width()) // 2, y))
+            canvas.blit(subtitle, ((VW - subtitle.get_width()) // 2, y + title.get_height() + 18))
+            line_y = y + title.get_height() + 7
+            line_w = 120 + int(120 * pulse)
+            pygame.draw.line(canvas, ACCENT, (VW // 2 - line_w, line_y),
+                             (VW // 2 + line_w, line_y), 3)
+            dot_x = VW // 2 - 110 + int((220 * elapsed / 1800) % 220)
+            pygame.draw.circle(canvas, ACCENT, (dot_x, line_y), 8)
+
+            rotated = pygame.transform.rotate(canvas, 90)
+            screen.blit(rotated, (0, 0))
+            pygame.display.flip()
+            clock.tick(FPS)
+
+    show_splash()
 
     # State
     files        = []
