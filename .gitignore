@@ -25,6 +25,8 @@ htmlcov/
 .env
 .env.*
 *.log
+control.json
+state.json
 
 # Editor and OS files
 .vscode/

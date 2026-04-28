@@ -25,6 +25,8 @@ from watchdog.events import FileSystemEventHandler
 BASE_DIR   = Path(__file__).parent
 PDF_DIR    = BASE_DIR / "pdfs"
 ORDER_FILE = BASE_DIR / "order.json"
+CONTROL_FILE = BASE_DIR / "control.json"
+STATE_FILE   = BASE_DIR / "state.json"
 
 NEXT_BAR_H = 120          # height of Next bar in the virtual canvas
 BG_COLOR   = (0,   0,   0)
@@ -124,6 +126,10 @@ def main():
     cached_key   = None    # (filename, page_index)
     needs_reload = threading.Event()
     needs_reload.set()
+    try:
+        last_command_id = json.loads(CONTROL_FILE.read_text()).get("id")
+    except Exception:
+        last_command_id = None
 
     def request_reload():
         needs_reload.set()
@@ -137,6 +143,23 @@ def main():
         if fname not in page_counts:
             page_counts[fname] = get_page_count(PDF_DIR / fname)
         return page_counts[fname]
+
+    def write_status():
+        if files:
+            fname = files[current_idx]
+            status = {
+                "file": fname,
+                "index": current_idx,
+                "page": current_page,
+                "pages": get_count(fname),
+                "total": len(files),
+            }
+        else:
+            status = {"file": None, "index": -1, "page": 0, "pages": 0, "total": 0}
+        try:
+            STATE_FILE.write_text(json.dumps(status))
+        except Exception:
+            pass
 
     def reload_list():
         nonlocal files, current_idx, current_page, cached_surf, cached_key, page_counts
@@ -154,6 +177,7 @@ def main():
                 current_idx  = 0
                 current_page = 0
             cached_surf = cached_key = None
+        write_status()
 
     def go_next():
         nonlocal current_idx, current_page, cached_surf, cached_key
@@ -167,6 +191,7 @@ def main():
             current_idx  = (current_idx + 1) % len(files)
             current_page = 0
         cached_surf = cached_key = None
+        write_status()
 
     def go_prev():
         nonlocal current_idx, current_page, cached_surf, cached_key
@@ -178,6 +203,22 @@ def main():
             current_idx  = (current_idx - 1) % len(files)
             current_page = get_count(files[current_idx]) - 1
         cached_surf = cached_key = None
+        write_status()
+
+    def handle_web_control():
+        nonlocal last_command_id
+        try:
+            command = json.loads(CONTROL_FILE.read_text())
+        except Exception:
+            return
+        command_id = command.get("id")
+        if not command_id or command_id == last_command_id:
+            return
+        last_command_id = command_id
+        if command.get("action") == "next":
+            go_next()
+        elif command.get("action") == "prev":
+            go_prev()
 
     def load_current():
         nonlocal cached_surf, cached_key
@@ -219,6 +260,7 @@ def main():
             needs_reload.clear()
             reload_list()
 
+        handle_web_control()
         load_current()
 
         # ── Draw onto virtual portrait canvas ─────────────────────────────────
@@ -247,30 +289,38 @@ def main():
 
         if files and len(files) > 1:
             # Determine next label: next PDF (first page)
-            next_file_idx = (current_idx + 1) % len(files)
+            next_file_idx = current_idx + 1
             next_page_for_next = 0
             cur_pages = get_count(files[current_idx])
             # If we're mid-PDF, "next" is the next page of this PDF
             if current_page < cur_pages - 1:
                 next_name   = files[current_idx]
                 next_suffix = f"  (p{current_page + 2}/{cur_pages})"
-            else:
+            elif next_file_idx < len(files):
                 next_name   = files[next_file_idx]
                 next_suffix = ""
+            else:
+                next_name = None
+                next_suffix = ""
 
-            display_name = next_name[:-4] if next_name.lower().endswith(".pdf") else next_name
-            display_name = display_name.replace("_", " ")
-            label    = font_label.render("Next:  ", True, ACCENT)
-            nxt_txt  = font_name.render(display_name + next_suffix, True, TEXT_COLOR)
-            total_w  = label.get_width() + nxt_txt.get_width()
-            x = (VW - total_w) // 2
-            y = bar_cy - label.get_height() // 2
-            canvas.blit(label,   (x, y))
-            canvas.blit(nxt_txt, (x + label.get_width(),
-                                  y + (label.get_height() - nxt_txt.get_height()) // 2))
+            if next_name is None:
+                only = font_name.render("--- end of queue ---", True, ACCENT)
+                canvas.blit(only, ((VW - only.get_width()) // 2,
+                                   bar_cy - only.get_height() // 2))
+            else:
+                display_name = next_name[:-4] if next_name.lower().endswith(".pdf") else next_name
+                display_name = display_name.replace("_", " ")
+                label    = font_label.render("Next:  ", True, ACCENT)
+                nxt_txt  = font_name.render(display_name + next_suffix, True, TEXT_COLOR)
+                total_w  = label.get_width() + nxt_txt.get_width()
+                x = (VW - total_w) // 2
+                y = bar_cy - label.get_height() // 2
+                canvas.blit(label,   (x, y))
+                canvas.blit(nxt_txt, (x + label.get_width(),
+                                      y + (label.get_height() - nxt_txt.get_height()) // 2))
 
         elif files and len(files) == 1:
-            only = font_name.render("— end of queue —", True, ACCENT)
+            only = font_name.render("--- end of queue ---", True, ACCENT)
             canvas.blit(only, ((VW - only.get_width()) // 2,
                                bar_cy - only.get_height() // 2))
 
