@@ -373,6 +373,10 @@ HTML = r"""<!DOCTYPE html>
   .drag-handle {
     color: var(--muted); font-size: 1.1rem; cursor: grab;
     padding: 0 4px; flex-shrink: 0;
+    touch-action: none;
+    user-select: none;
+    -webkit-user-select: none;
+    -webkit-touch-callout: none;
   }
   .file-idx {
     font-family: 'Syne', sans-serif; font-weight: 800;
@@ -651,19 +655,78 @@ function render() {
       files.splice(to, 0, files.splice(from, 1)[0]);
       render();
       try {
-        await api('/api/order', {
-          method:'POST',
-          headers:{'Content-Type':'application/json'},
-          body: JSON.stringify({order: files})
-        });
+        await saveOrder();
         toast('Order saved');
       } catch(err) { toast(err.message, 'error'); }
     });
   });
 
+  // Touch reorder for mobile browsers
+  list.querySelectorAll('.drag-handle').forEach(handle => {
+    handle.addEventListener('pointerdown', e => {
+      if (e.pointerType !== 'touch') return;
+      const item = handle.closest('.file-item');
+      if (!item) return;
+      e.preventDefault();
+      handle.setPointerCapture(e.pointerId);
+      dragSrc = item.dataset.name;
+      const startY = e.clientY;
+      const oldTransition = item.style.transition;
+      item.classList.add('dragging');
+      item.style.zIndex = '1000';
+      item.style.transition = 'none';
+      item.style.pointerEvents = 'none';
+      item.style.boxShadow = '0 12px 30px rgba(0,0,0,.55)';
+
+      const move = evt => {
+        evt.preventDefault();
+        item.style.transform = `translateY(${evt.clientY - startY}px) scale(1.02)`;
+        list.querySelectorAll('.file-item.drag-over').forEach(el => el.classList.remove('drag-over'));
+        const target = document.elementFromPoint(evt.clientX, evt.clientY)?.closest('.file-item');
+        if (target && target.dataset.name !== dragSrc) target.classList.add('drag-over');
+      };
+
+      const end = async evt => {
+        handle.removeEventListener('pointermove', move);
+        handle.removeEventListener('pointerup', end);
+        handle.removeEventListener('pointercancel', end);
+        const target = document.elementFromPoint(evt.clientX, evt.clientY)?.closest('.file-item');
+        item.classList.remove('dragging');
+        item.style.transform = '';
+        item.style.zIndex = '';
+        item.style.transition = oldTransition;
+        item.style.pointerEvents = '';
+        item.style.boxShadow = '';
+        list.querySelectorAll('.file-item.drag-over').forEach(el => el.classList.remove('drag-over'));
+        if (!target || !dragSrc || target.dataset.name === dragSrc) return;
+        const from = files.indexOf(dragSrc);
+        const to = files.indexOf(target.dataset.name);
+        files.splice(to, 0, files.splice(from, 1)[0]);
+        render();
+        try {
+          await saveOrder();
+          toast('Order saved');
+        } catch(err) { toast(err.message, 'error'); }
+      };
+
+      handle.addEventListener('pointermove', move);
+      handle.addEventListener('pointerup', end);
+      handle.addEventListener('pointercancel', end);
+    });
+    handle.addEventListener('contextmenu', e => e.preventDefault());
+  });
+
   // Inline rename
   list.querySelectorAll('.file-name').forEach(el => {
     el.addEventListener('click', e => startRename(el, e));
+  });
+}
+
+async function saveOrder() {
+  return api('/api/order', {
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({order: files})
   });
 }
 
