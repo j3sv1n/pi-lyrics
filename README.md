@@ -259,5 +259,3 @@ This project is licensed under the MIT License - see the LICENSE file for detail
 ## Support
 
 For questions or issues, please check the troubleshooting section or create an issue in the repository.
-
-> If you want to include visuals in the docs, save screenshots to `screenshots/` and reference them inline in the relevant sections.
