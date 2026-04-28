@@ -135,12 +135,11 @@ def api_blank():
 
     # Insert into order
     order = read_order()
-    # read_order may not include the new file yet (it just appeared on disk)
-    if candidate not in order:
-        if after < 0 or after >= len(order):
-            order.append(candidate)
-        else:
-            order.insert(after + 1, candidate)
+    order = [f for f in order if f != candidate]
+    if after < 0 or after >= len(order):
+        order.append(candidate)
+    else:
+        order.insert(after + 1, candidate)
     write_order(order)
     return jsonify({"created": candidate, "order": read_order()})
 
