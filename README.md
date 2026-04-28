@@ -16,33 +16,76 @@ A web-based slide management system designed to run smoothly on Raspberry Pi dev
 
 ## Installation
 
-### Prerequisites
+### Preferred install path
 
-- Python 3.8 or higher
-- pip (Python package manager)
-- PyMuPDF (Fitz) for PDF processing
-- Pygame for display rendering
-- Flask for web server
+Use this installer from the project root on Raspberry Pi OS:
+```bash
+sudo bash install.sh
+```
 
-### Setup
+It will:
+- install required system packages with `apt`
+- create `~/pi-lyrics`
+- copy `display.py` and `server.py` into that directory
+- create a Python venv with `--system-site-packages`
+- install `PyMuPDF` in the venv using a custom `TMPDIR`
 
-1. Clone or download the project files:
-   ```bash
-   git clone <repository-url>
-   cd pi-lyrics
-   ```
+### Why this is needed
 
-2. Install dependencies:
-   ```bash
-   pip install flask werkzeug pymupdf pygame watchdog
-   ```
+The Pi install can fail in two common ways:
+- `low disk space` errors while creating the venv
+- `No module named fitz` after installing `python3-pymupdf` from apt
 
-3. On Raspberry Pi systems, make sure Python, pip, and required libraries are installed and that the Pi can access the display hardware.
+This project works reliably by installing `pymupdf==1.22.3` directly into the venv with a temporary disk-backed `TMPDIR`.
 
-4. Run the setup:
-   - Start the server: `python server.py`
-   - On first run, you'll be prompted to create an owner account
-   - The web interface will be available at `http://localhost:5000`
+### Manual fallback
+
+If you prefer to do the steps manually, use:
+```bash
+mkdir -p ~/tmp
+TMPDIR=~/tmp python3 -m venv ~/pi-lyrics/venv --system-site-packages
+TMPDIR=~/tmp ~/pi-lyrics/venv/bin/python -m pip install --break-system-packages --no-cache-dir "pymupdf==1.22.3"
+```
+
+### Optional autostart
+
+Autostart is optional. If you do not want the display app to launch automatically on login, do not enable autostart.
+
+To start the display manually after install:
+```bash
+bash start-display.sh
+```
+
+To enable optional autostart later:
+```bash
+bash enable-autostart.sh
+```
+
+Or use the equivalent manual autostart setup:
+```bash
+mkdir -p /home/pi/.config/autostart
+cat > /home/pi/.config/autostart/pi-lyrics.desktop <<'EOF'
+[Desktop Entry]
+Type=Application
+Name=Pi Lyrics
+Exec=bash -c "sleep 20 && /home/pi/pi-lyrics/venv/bin/python /home/pi/pi-lyrics/display.py"
+StartupNotify=false
+EOF
+```
+
+This launches the display app after login with a short delay, giving X time to become available.
+
+### Starting the app
+
+Start the server from the app directory:
+```bash
+cd ~/pi-lyrics && python server.py
+```
+
+Start the display app manually on the Pi display:
+```bash
+bash start-display.sh
+```
 
 ## Usage
 
