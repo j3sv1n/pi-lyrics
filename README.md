@@ -18,49 +18,136 @@ A web-based slide management system designed to run smoothly on Raspberry Pi dev
 
 ### Prerequisites
 
-- Python 3.8 or higher
-- pip (Python package manager)
-- PyMuPDF (Fitz) for PDF processing
-- Pygame for display rendering
-- Flask for web server
+- Raspberry Pi OS installed on your Pi device
+- Internet connection for downloading packages
 
 ### Setup
 
-1. Clone or download the project files:
+1. Clone the repository:
    ```bash
    git clone <repository-url>
    cd pi-lyrics
    ```
 
-2. Install dependencies:
+2. Run the installer:
    ```bash
-   pip install flask werkzeug pymupdf pygame watchdog
+   sudo bash install.sh
    ```
 
-3. On Raspberry Pi systems, make sure Python, pip, and required libraries are installed and that the Pi can access the display hardware.
+The installer will:
+- install required system packages with `apt`
+- create `~/pi-lyrics`
+- copy `display.py` and `server.py` into that directory
+- create a Python venv with `--system-site-packages`
+- install `Flask==2.3.3`, `Werkzeug==3.0.0`, and `pymupdf==1.22.3` in the venv
 
-4. Run the setup:
-   - Start the server: `python server.py`
-   - On first run, you'll be prompted to create an owner account
-   - The web interface will be available at `http://localhost:5000`
+### Why this is needed
+
+The Pi install can fail in two common ways:
+- `low disk space` errors while creating the venv
+- `No module named fitz` after installing `python3-pymupdf` from apt
+
+This project works reliably by installing `pymupdf==1.22.3` directly into the venv with a temporary disk-backed `TMPDIR`.
+
+### Manual fallback
+
+If you prefer to do the steps manually, use:
+```bash
+mkdir -p ~/tmp
+TMPDIR=~/tmp python3 -m venv ~/pi-lyrics/venv --system-site-packages
+TMPDIR=~/tmp ~/pi-lyrics/venv/bin/python -m pip install --break-system-packages --no-cache-dir \
+  "Flask==2.3.3" "Werkzeug==3.0.0" "pymupdf==1.22.3"
+```
+
+### Optional autostart
+
+To enable autostart for both the web server and display on boot, run:
+```bash
+sudo bash enable-autostart.sh
+```
+
+This creates:
+- A systemd service that starts the web server automatically on system boot
+- A desktop entry that starts the display app automatically on desktop login (with a 20-second delay)
+
+If you do not want autostart, simply do not run this script. You can start both services manually anytime:
+```bash
+bash start-server.sh   # Start web server
+bash start-display.sh  # Start display app
+```
+
+### Starting the app
+
+After install, start the services manually:
+
+**Web server:**
+```bash
+bash start-server.sh
+```
+
+**Display app:**
+```bash
+bash start-display.sh
+```
+
+**Optional automatic start:**
+
+To enable both services to start automatically on boot:
+```bash
+sudo bash enable-autostart.sh
+```
+
+This sets up systemd for the web server (boots on system start) and desktop autostart for the display app (starts on desktop login).
 
 ## Usage
 
-### Starting the Server
+### Web Server
 
-Run the web server:
+By default, the web server is manual start. To run it:
 ```bash
-python server.py
+bash start-server.sh
 ```
 
-The server runs on port 5000 by default. Access the web interface at `http://localhost:5000`.
-
-### Starting the Display
-
-Run the display application on the machine connected to your vertical monitor:
+Or run directly:
 ```bash
-python display.py
+~/pi-lyrics/venv/bin/python ~/pi-lyrics/server.py
 ```
+
+Access the web interface at `http://localhost:5000`.
+
+**To enable automatic start on system boot:**
+
+Run `sudo bash enable-autostart.sh` to set up the systemd service. After that, the server will start automatically on boot.
+
+To check systemd service status:
+```bash
+sudo systemctl status pi-lyrics-server.service
+sudo systemctl restart pi-lyrics-server.service
+```
+
+To view server logs:
+```bash
+sudo journalctl -u pi-lyrics-server.service --no-pager
+```
+
+### Display Application
+
+Start the display app on the Pi monitor:
+```bash
+bash start-display.sh
+```
+
+Or run it manually with:
+```bash
+DISPLAY=:0 ~/pi-lyrics/venv/bin/python ~/pi-lyrics/display.py &
+```
+
+To enable autostart on login:
+```bash
+bash enable-autostart.sh
+```
+
+### Web Interface
 
 The display will automatically connect to the server and show slides in fullscreen mode.
 
@@ -68,12 +155,14 @@ The display will automatically connect to the server and show slides in fullscre
 
 The rotated display layout is designed for vertical monitors and shows the next slide preview while rendering the current PDF in fullscreen.
 
-### Web Interface
+#### First-time setup
 
 1. **Setup**: On first run, create an owner account and choose whether to enable login
 2. **Login** (if enabled): Use your username and password to access the system
 
    ![Pi Lyrics Login](screenshots/login.png)
+
+#### Using the dashboard
 
 3. **Upload Slides**: Drag and drop PDF files or click to browse
 4. **Reorder Slides**: Drag slides to change their order
@@ -174,20 +263,6 @@ pi-lyrics/
 └── secret.key         # Session secret
 ```
 
-### Contributing
-
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Test thoroughly
-5. Submit a pull request
-
 ## License
 
 This project is licensed under the MIT License - see the LICENSE file for details.
-
-## Support
-
-For questions or issues, please check the troubleshooting section or create an issue in the repository.
-
-> If you want to include visuals in the docs, save screenshots to `screenshots/` and reference them inline in the relevant sections.
