@@ -25,7 +25,7 @@ A web-based slide management system designed to run smoothly on Raspberry Pi dev
 
 1. Clone the repository:
    ```bash
-   git clone <repository-url>
+   git clone https://github.com/j3sv1n/pi-lyrics
    cd pi-lyrics
    ```
 
