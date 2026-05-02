@@ -56,7 +56,8 @@ If you prefer to do the steps manually, use:
 ```bash
 mkdir -p ~/tmp
 TMPDIR=~/tmp python3 -m venv ~/pi-lyrics/venv --system-site-packages
-TMPDIR=~/tmp ~/pi-lyrics/venv/bin/python -m pip install --break-system-packages --no-cache-dir "pymupdf==1.22.3"
+TMPDIR=~/tmp ~/pi-lyrics/venv/bin/python -m pip install --break-system-packages --no-cache-dir \
+  "Flask==2.3.3" "Werkzeug==3.0.0" "pymupdf==1.22.3"
 ```
 
 ### Optional autostart
