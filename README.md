@@ -40,7 +40,6 @@ The installer will:
 - copy `display.py` and `server.py` into that directory
 - create a Python venv with `--system-site-packages`
 - install `Flask==2.3.3`, `Werkzeug==3.0.0`, and `pymupdf==1.22.3` in the venv
-- optionally set up a systemd service for the web server (you'll be prompted during install)
 
 ### Why this is needed
 
@@ -62,69 +61,49 @@ TMPDIR=~/tmp ~/pi-lyrics/venv/bin/python -m pip install --break-system-packages 
 
 ### Optional autostart
 
-Autostart is optional. If you do not want the display app to launch automatically on login, do not enable autostart.
-
-To start the display manually after install:
+To enable autostart for both the web server and display on boot, run:
 ```bash
-bash start-display.sh
+sudo bash enable-autostart.sh
 ```
 
-To enable optional autostart later:
-```bash
-bash enable-autostart.sh
-```
+This creates:
+- A systemd service that starts the web server automatically on system boot
+- A desktop entry that starts the display app automatically on desktop login (with a 20-second delay)
 
-Or use the equivalent manual autostart setup:
+If you do not want autostart, simply do not run this script. You can start both services manually anytime:
 ```bash
-mkdir -p ~/.config/autostart
-cat > ~/.config/autostart/pi-lyrics.desktop <<EOF
-[Desktop Entry]
-Type=Application
-Name=Pi Lyrics
-Exec=bash -lc 'sleep 20 && ~/pi-lyrics/venv/bin/python ~/pi-lyrics/display.py'
-StartupNotify=false
-EOF
+bash start-server.sh   # Start web server
+bash start-display.sh  # Start display app
 ```
-
-This launches the display app after login with a short delay, giving X time to become available.
 
 ### Starting the app
 
+After install, start the services manually:
+
 **Web server:**
-- If you enabled the systemd service during install, it starts automatically on boot. Access it at `http://localhost:5000`.
-- If you did not enable systemd, start the server manually with `bash start-server.sh` or `~/pi-lyrics/venv/bin/python ~/pi-lyrics/server.py`.
+```bash
+bash start-server.sh
+```
 
 **Display app:**
-Start the display on the Pi monitor:
 ```bash
 bash start-display.sh
 ```
+
+**Optional automatic start:**
+
+To enable both services to start automatically on boot:
+```bash
+sudo bash enable-autostart.sh
+```
+
+This sets up systemd for the web server (boots on system start) and desktop autostart for the display app (starts on desktop login).
 
 ## Usage
 
 ### Web Server
 
-The web server can run in two ways:
-
-**With systemd service (if enabled during install):**
-```
-http://localhost:5000
-```
-
-To check the service status:
-```bash
-sudo systemctl status pi-lyrics-server.service
-sudo systemctl restart pi-lyrics-server.service
-```
-
-To inspect logs:
-```bash
-sudo journalctl -u pi-lyrics-server.service --no-pager
-```
-
-**Without systemd (manual start):**
-
-If you did not enable the systemd service during install, start the server manually:
+By default, the web server is manual start. To run it:
 ```bash
 bash start-server.sh
 ```
@@ -134,7 +113,22 @@ Or run directly:
 ~/pi-lyrics/venv/bin/python ~/pi-lyrics/server.py
 ```
 
-Then access the web interface at `http://localhost:5000`.
+Access the web interface at `http://localhost:5000`.
+
+**To enable automatic start on system boot:**
+
+Run `sudo bash enable-autostart.sh` to set up the systemd service. After that, the server will start automatically on boot.
+
+To check systemd service status:
+```bash
+sudo systemctl status pi-lyrics-server.service
+sudo systemctl restart pi-lyrics-server.service
+```
+
+To view server logs:
+```bash
+sudo journalctl -u pi-lyrics-server.service --no-pager
+```
 
 ### Display Application
 

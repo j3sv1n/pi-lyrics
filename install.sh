@@ -33,7 +33,7 @@ echo "  Pi Lyrics installer"
 echo "========================================"
 
 echo ""
-echo "[1/6] Installing system packages..."
+echo "[1/5] Installing system packages..."
 apt-get update -q
 apt-get install -y -q \
   python3 python3-pip python3-venv \
@@ -41,7 +41,7 @@ apt-get install -y -q \
   libsdl2-dev fonts-dejavu
 
 echo ""
-echo "[2/6] Creating app directory..."
+echo "[2/5] Creating app directory..."
 mkdir -p "$APP_DIR/pdfs"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 if [ "$SCRIPT_DIR" != "$APP_DIR" ]; then
@@ -51,12 +51,12 @@ fi
 chown -R "$SERVICE_USER:$SERVICE_USER" "$APP_DIR"
 
 echo ""
-echo "[3/6] Creating Python virtualenv..."
+echo "[3/5] Creating Python virtualenv..."
 rm -rf "$VENV_DIR"
 sudo -u "$SERVICE_USER" python3 -m venv "$VENV_DIR" --system-site-packages
 
 echo ""
-echo "[4/6] Installing PyMuPDF and required Python packages..."
+echo "[4/5] Installing Flask, Werkzeug, and PyMuPDF..."
 mkdir -p "$TMPDIR_CUSTOM"
 chown "$SERVICE_USER:$SERVICE_USER" "$TMPDIR_CUSTOM"
 
@@ -67,54 +67,16 @@ sudo -u "$SERVICE_USER" TMPDIR="$TMPDIR_CUSTOM" \
 rm -rf "$TMPDIR_CUSTOM"
 
 echo ""
-echo "[5/6] Optional: Install systemd service for web server (autostart on boot)?"
-echo "This creates a service that starts the web server automatically."
-echo ""
-read -p "Install systemd service? (y/n) " -n 1 -r
-echo ""
-if [[ $REPLY =~ ^[Yy]$ ]]; then
-  echo "Installing systemd service for web server (port 5000)..."
-  cat > /etc/systemd/system/pi-lyrics-server.service << EOF
-[Unit]
-Description=Pi Lyrics Web Server
-After=network.target
-
-[Service]
-Type=simple
-User=$SERVICE_USER
-WorkingDirectory=$APP_DIR
-ExecStart=$APP_DIR/venv/bin/python $APP_DIR/server.py
-Restart=on-failure
-RestartSec=5
-StandardOutput=journal
-StandardError=journal
-Environment=PYTHONUNBUFFERED=1
-
-[Install]
-WantedBy=multi-user.target
-EOF
-
-  systemctl daemon-reload
-  systemctl enable pi-lyrics-server.service
-  systemctl start pi-lyrics-server.service
-  echo "✓ Systemd service installed and started."
-else
-  echo "Systemd service skipped. Use 'bash start-server.sh' to start the web server manually."
-fi
-
-echo ""
-echo "[6/6] Installation complete."
+echo "[5/5] Installation complete."
 echo ""
 echo "Access the web interface at: http://$(hostname -I | awk '{print $1}'):5000"
 echo ""
-echo "To start the web server manually from the app directory:"
+echo "To start the web server manually:"
 echo "  bash $SCRIPT_DIR/start-server.sh"
 echo ""
 echo "To start the display manually:"
-echo "  DISPLAY=:0 $VENV_DIR/bin/python $APP_DIR/display.py &"
-echo ""
-echo "To start the display with the helper script:"
 echo "  bash $SCRIPT_DIR/start-display.sh"
-echo "To enable optional autostart later:"
+echo ""
+echo "To enable autostart for both server and display on boot:"
 echo "  bash $SCRIPT_DIR/enable-autostart.sh"
 echo "========================================"
