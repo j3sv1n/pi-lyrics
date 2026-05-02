@@ -111,6 +111,16 @@ sudo systemctl status pi-lyrics-server.service
 sudo systemctl restart pi-lyrics-server.service
 ```
 
+If the systemd service is not running, inspect its logs with:
+```bash
+sudo journalctl -u pi-lyrics-server.service --no-pager
+```
+
+If necessary, start the server from the app directory with the helper script:
+```bash
+bash start-server.sh
+```
+
 ### Display Application
 
 Start the display app on the Pi monitor:

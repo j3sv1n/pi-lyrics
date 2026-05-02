@@ -70,7 +70,7 @@ Restart=on-failure
 RestartSec=5
 StandardOutput=journal
 StandardError=journal
-Environment=DISPLAY=:0
+Environment=PYTHONUNBUFFERED=1
 
 [Install]
 WantedBy=multi-user.target
@@ -85,6 +85,9 @@ echo "[6/6] Installation complete."
 echo ""
 echo "The web server starts automatically on boot via systemd."
 echo "Access it at: http://$(hostname -I | awk '{print $1}'):5000"
+echo ""
+echo "To start the web server manually from the app directory:"
+echo "  bash $SCRIPT_DIR/start-server.sh"
 echo ""
 echo "To start the display manually:"
 echo "  DISPLAY=:0 $VENV_DIR/bin/python $APP_DIR/display.py &"
