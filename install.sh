@@ -44,8 +44,10 @@ echo ""
 echo "[2/6] Creating app directory..."
 mkdir -p "$APP_DIR/pdfs"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-cp "$SCRIPT_DIR/display.py" "$APP_DIR/display.py"
-cp "$SCRIPT_DIR/server.py" "$APP_DIR/server.py"
+if [ "$SCRIPT_DIR" != "$APP_DIR" ]; then
+  cp "$SCRIPT_DIR/display.py" "$APP_DIR/display.py"
+  cp "$SCRIPT_DIR/server.py" "$APP_DIR/server.py"
+fi
 chown -R "$SERVICE_USER:$SERVICE_USER" "$APP_DIR"
 
 echo ""
