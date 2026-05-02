@@ -75,12 +75,12 @@ bash enable-autostart.sh
 
 Or use the equivalent manual autostart setup:
 ```bash
-mkdir -p /home/pi/.config/autostart
-cat > /home/pi/.config/autostart/pi-lyrics.desktop <<'EOF'
+mkdir -p ~/.config/autostart
+cat > ~/.config/autostart/pi-lyrics.desktop <<EOF
 [Desktop Entry]
 Type=Application
 Name=Pi Lyrics
-Exec=bash -c "sleep 20 && /home/pi/pi-lyrics/venv/bin/python /home/pi/pi-lyrics/display.py"
+Exec=bash -lc 'sleep 20 && ~/pi-lyrics/venv/bin/python ~/pi-lyrics/display.py'
 StartupNotify=false
 EOF
 ```

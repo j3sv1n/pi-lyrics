@@ -7,13 +7,20 @@
 
 set -euo pipefail
 
-SERVICE_USER="${SUDO_USER:-pi}"
-if [ -z "$SERVICE_USER" ]; then
-  SERVICE_USER="pi"
+if [ -z "${SUDO_USER:-}" ]; then
+  echo "This installer must be run with sudo from the target user account."
+  echo "Use: sudo bash install.sh"
+  exit 1
 fi
-APP_DIR="/home/$SERVICE_USER/pi-lyrics"
+SERVICE_USER="$SUDO_USER"
+SERVICE_HOME="$(getent passwd "$SERVICE_USER" | cut -d: -f6)"
+if [ -z "$SERVICE_HOME" ]; then
+  echo "Unable to determine home directory for user $SERVICE_USER."
+  exit 1
+fi
+APP_DIR="$SERVICE_HOME/pi-lyrics"
 VENV_DIR="$APP_DIR/venv"
-TMPDIR_CUSTOM="/home/$SERVICE_USER/tmp"
+TMPDIR_CUSTOM="$SERVICE_HOME/tmp"
 
 if [ "$(id -u)" -ne 0 ]; then
   echo "This installer must be run as root."
