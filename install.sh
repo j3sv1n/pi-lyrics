@@ -64,9 +64,17 @@ sudo -u "$SERVICE_USER" TMPDIR="$TMPDIR_CUSTOM" \
   "$VENV_DIR/bin/python" -m pip install --break-system-packages --no-cache-dir \
   "Flask==2.3.3" "Werkzeug==3.0.0" "pymupdf==1.22.3"
 
+rm -rf "$TMPDIR_CUSTOM"
+
 echo ""
-echo "[5/6] Installing systemd service for web server (port 5000)..."
-cat > /etc/systemd/system/pi-lyrics-server.service << EOF
+echo "[5/6] Optional: Install systemd service for web server (autostart on boot)?"
+echo "This creates a service that starts the web server automatically."
+echo ""
+read -p "Install systemd service? (y/n) " -n 1 -r
+echo ""
+if [[ $REPLY =~ ^[Yy]$ ]]; then
+  echo "Installing systemd service for web server (port 5000)..."
+  cat > /etc/systemd/system/pi-lyrics-server.service << EOF
 [Unit]
 Description=Pi Lyrics Web Server
 After=network.target
@@ -86,15 +94,18 @@ Environment=PYTHONUNBUFFERED=1
 WantedBy=multi-user.target
 EOF
 
-systemctl daemon-reload
-systemctl enable pi-lyrics-server.service
-systemctl start pi-lyrics-server.service
+  systemctl daemon-reload
+  systemctl enable pi-lyrics-server.service
+  systemctl start pi-lyrics-server.service
+  echo "✓ Systemd service installed and started."
+else
+  echo "Systemd service skipped. Use 'bash start-server.sh' to start the web server manually."
+fi
 
 echo ""
 echo "[6/6] Installation complete."
 echo ""
-echo "The web server starts automatically on boot via systemd."
-echo "Access it at: http://$(hostname -I | awk '{print $1}'):5000"
+echo "Access the web interface at: http://$(hostname -I | awk '{print $1}'):5000"
 echo ""
 echo "To start the web server manually from the app directory:"
 echo "  bash $SCRIPT_DIR/start-server.sh"

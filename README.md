@@ -39,8 +39,8 @@ The installer will:
 - create `~/pi-lyrics`
 - copy `display.py` and `server.py` into that directory
 - create a Python venv with `--system-site-packages`
-- install `PyMuPDF` in the venv using a custom `TMPDIR`
-- set up a systemd service for the web server (starts automatically on boot)
+- install `Flask==2.3.3`, `Werkzeug==3.0.0`, and `pymupdf==1.22.3` in the venv
+- optionally set up a systemd service for the web server (you'll be prompted during install)
 
 ### Why this is needed
 
@@ -90,9 +90,12 @@ This launches the display app after login with a short delay, giving X time to b
 
 ### Starting the app
 
-The web server starts automatically via systemd on boot. Access it at `http://localhost:5000`.
+**Web server:**
+- If you enabled the systemd service during install, it starts automatically on boot. Access it at `http://localhost:5000`.
+- If you did not enable systemd, start the server manually with `bash start-server.sh` or `~/pi-lyrics/venv/bin/python ~/pi-lyrics/server.py`.
 
-Start the display app manually on the Pi display:
+**Display app:**
+Start the display on the Pi monitor:
 ```bash
 bash start-display.sh
 ```
@@ -101,26 +104,37 @@ bash start-display.sh
 
 ### Web Server
 
-The web server starts automatically after boot via systemd. Access it at:
+The web server can run in two ways:
+
+**With systemd service (if enabled during install):**
 ```
 http://localhost:5000
 ```
 
-To check the server status or restart it manually:
+To check the service status:
 ```bash
 sudo systemctl status pi-lyrics-server.service
 sudo systemctl restart pi-lyrics-server.service
 ```
 
-If the systemd service is not running, inspect its logs with:
+To inspect logs:
 ```bash
 sudo journalctl -u pi-lyrics-server.service --no-pager
 ```
 
-If necessary, start the server from the app directory with the helper script:
+**Without systemd (manual start):**
+
+If you did not enable the systemd service during install, start the server manually:
 ```bash
 bash start-server.sh
 ```
+
+Or run directly:
+```bash
+~/pi-lyrics/venv/bin/python ~/pi-lyrics/server.py
+```
+
+Then access the web interface at `http://localhost:5000`.
 
 ### Display Application
 
