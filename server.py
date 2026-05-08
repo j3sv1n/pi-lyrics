@@ -403,7 +403,8 @@ def pdf_page_count(filename):
 
 def remove_digits_from_filename(filename):
     stem, ext = os.path.splitext(filename)
-    stem = re.sub(r"\d+", "", stem)
+    # Strip any dangling underscores, dashes, or spaces after digits are removed
+    stem = re.sub(r"\d+", "", stem).strip("_.- ")
     return (stem or "upload") + ext
 
 
@@ -501,7 +502,8 @@ def api_order():
 
 @app.route("/api/delete/<filename>", methods=["DELETE"])
 def api_delete(filename):
-    name = secure_filename(filename)
+    # Safely extract the exact basename without stripping underscores
+    name = Path(filename).name
     path = PDF_DIR / name
     if not path.exists():
         return jsonify({"error": "Not found"}), 404
@@ -516,19 +518,24 @@ def api_rename():
     data = request.get_json()
     old_raw = data.get("old", "")
     existing = set(p.name for p in PDF_DIR.glob("*.pdf"))
-    old = old_raw if old_raw in existing else secure_filename(old_raw)
+    # Safely extract the exact old basename
+    old = Path(old_raw).name 
     new = secure_filename(data.get("new", ""))
+    
     if not old or not new:
         return jsonify({"error": "Missing names"}), 400
     if not new.lower().endswith(".pdf"):
         new += ".pdf"
+        
     src = PDF_DIR / old
     dst = PDF_DIR / new
     order = read_order()
+    
     if not src.exists():
         return jsonify({"error": "File not found"}), 404
     if dst.exists():
         return jsonify({"error": "Name already taken"}), 409
+        
     src.rename(dst)
     order = [(new if f == old else f) for f in order]
     write_order(order)
@@ -556,7 +563,8 @@ def api_control():
 
 @app.route("/pdfs/<filename>")
 def serve_pdf(filename):
-    return send_from_directory(str(PDF_DIR), secure_filename(filename))
+    # Flask's send_from_directory is natively safe against path traversal
+    return send_from_directory(str(PDF_DIR), filename)
 
 
 # ── Web UI ────────────────────────────────────────────────────────────────────
@@ -840,7 +848,6 @@ HTML = r"""<!DOCTYPE html>
 
 <main>
 
-  <!-- Upload -->
   <div class="upload-zone" id="drop-zone">
     <div class="icon">📂</div>
     <h3>Drop PDF files here</h3>
@@ -851,7 +858,6 @@ HTML = r"""<!DOCTYPE html>
     </div>
   </div>
 
-  <!-- List -->
   <div class="section-hdr">
     <div class="section-hdr-left">
       <h2>Slide Queue</h2>
@@ -861,7 +867,6 @@ HTML = r"""<!DOCTYPE html>
   </div>
   <div id="file-list"></div>
 
-  <!-- Display controls -->
   <div class="display-controls">
     <div class="current-display">
       <h3>Now Showing</h3>
@@ -874,7 +879,6 @@ HTML = r"""<!DOCTYPE html>
     </div>
   </div>
 
-  <!-- Help -->
   <div class="help">
     <h3>REMOTE / KEYBOARD SHORTCUTS ON DISPLAY</h3>
     <ul>
@@ -889,7 +893,6 @@ HTML = r"""<!DOCTYPE html>
 
 </main>
 
-<!-- Blank slide dialog -->
 <div class="blank-dialog-overlay" id="blank-dialog-overlay">
   <div class="blank-dialog">
     <h3>➕ Insert Blank Slide</h3>
