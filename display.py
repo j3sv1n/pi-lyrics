@@ -22,6 +22,9 @@ from pathlib import Path
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
 
+# Prevent the window from minimizing if it loses focus
+os.environ["SDL_VIDEO_MINIMIZE_ON_FOCUS_LOSS"] = "0"
+
 # ── Config ────────────────────────────────────────────────────────────────────
 BASE_DIR   = Path(__file__).parent
 PDF_DIR    = BASE_DIR / "pdfs"
@@ -126,6 +129,10 @@ def main():
 
         # The 'display=target_monitor' argument forces Pygame to lock onto the specific HDMI port
         screen = pygame.display.set_mode((SW, SH), pygame.FULLSCREEN | pygame.NOFRAME, display=target_monitor)
+        
+        # FORCE KEYBOARD GRAB: Ensures presentation remote keystrokes are routed here
+        pygame.event.set_grab(True)
+        
         print(f"Display initialized on {current_display} (Physical Monitor {target_monitor}): {SW}x{SH}")
     except Exception as e:
         print(f"Failed to initialize display: {e}")
@@ -406,6 +413,17 @@ def main():
         screen.blit(rotated, (0, 0))
 
         pygame.display.flip()
+
+        # --- FORCE KEYBOARD FOCUS EVERY FRAME ---
+        # If Pi Timer launches and steals X11 focus, this forces it back so the remote works!
+        if not pygame.key.get_focused():
+            try:
+                from pygame._sdl2.video import Window
+                win = Window.from_display_module()
+                win.focus()
+            except Exception:
+                pass
+
         clock.tick(FPS)
 
     observer.stop()
